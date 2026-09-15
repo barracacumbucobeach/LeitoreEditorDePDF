@@ -1,0 +1,19 @@
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+build/
+dist/
+*.spec
+.DS_Store
+*.egg-info/
+.pytest_cache/
+*.log
+
+# Configurações locais do usuário (QSettings pode gravar aqui em alguns SOs)
+*.ini
+
+# Arquivos temporários de teste
+/tmp_test_output/
