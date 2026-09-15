@@ -1,10 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
-# Spec do PyInstaller para gerar o executável do Fólio Studio.
+# Spec do PyInstaller para gerar o executável do Papyra.
 #
 # Uso (no Windows, dentro do ambiente virtual com as dependências instaladas):
-#     pyinstaller folio_studio.spec
+#     pyinstaller papyra.spec
 #
-# O executável final fica em dist/FolioStudio/FolioStudio.exe
+# O executável final fica em dist/Papyra/Papyra.exe
 
 block_cipher = None
 
@@ -28,7 +28,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name='FolioStudio',
+    name='Papyra',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -45,5 +45,5 @@ coll = COLLECT(
     strip=False,
     upx=True,
     upx_exclude=[],
-    name='FolioStudio',
+    name='Papyra',
 )

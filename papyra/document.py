@@ -1,5 +1,5 @@
 """
-Núcleo de domínio do Fólio Studio.
+Núcleo de domínio do Papyra.
 
 Envolve um `fitz.Document` (PyMuPDF) e expõe uma API de alto nível para
 leitura, renderização e edição real de conteúdo de PDF: texto, imagens,

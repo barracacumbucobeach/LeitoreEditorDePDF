@@ -1,5 +1,5 @@
 """
-Tema visual do Fólio Studio.
+Tema visual do Papyra.
 
 Uma paleta única (latão/dourado sobre grafite ou marfim) aplicada de forma
 consistente nos modos claro e escuro, com folha de estilos (QSS) desenhada
@@ -404,5 +404,64 @@ def stylesheet(dark: bool) -> str:
     QProgressBar::chunk {{
         background: {p['accent']};
         border-radius: 6px;
+    }}
+
+    /* ---------- Página inicial (dashboard) ---------- */
+    QWidget#homeRoot, QWidget#homeContent {{
+        background: {p['bg']};
+    }}
+    QLabel#homeTitle {{
+        font-size: 25px;
+        font-weight: 700;
+        color: {p['text']};
+    }}
+    QLabel#homeSubtitle {{
+        font-size: 13px;
+        color: {p['text_dim']};
+    }}
+    QLabel#homeSectionTitle {{
+        font-size: 13px;
+        font-weight: 700;
+        color: {p['text_dim']};
+    }}
+    QLabel#homeHint {{
+        color: {p['text_faint']};
+        font-size: 12px;
+        padding: 10px 2px;
+    }}
+    QFrame#homeCard {{
+        background: {p['surface']};
+        border: 1px solid {p['border']};
+        border-radius: 12px;
+    }}
+    QFrame#homeCard:hover {{
+        background: {p['surface_hover']};
+        border: 1px solid {p['accent']};
+    }}
+    QLabel#homeCardTitle {{
+        font-size: 15px;
+        font-weight: 700;
+        color: {p['text']};
+    }}
+    QLabel#homeCardSubtitle {{
+        font-size: 12px;
+        color: {p['text_dim']};
+    }}
+    QFrame#recentRow {{
+        background: {p['surface_alt']};
+        border: 1px solid {p['border_soft']};
+        border-radius: 8px;
+    }}
+    QFrame#recentRow:hover {{
+        background: {p['surface_hover']};
+        border: 1px solid {p['accent']};
+    }}
+    QLabel#recentRowName {{
+        font-weight: 600;
+        color: {p['text']};
+    }}
+    QLabel#recentRowPath {{
+        font-size: 11px;
+        color: {p['text_faint']};
     }}
     """

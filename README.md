@@ -1,14 +1,22 @@
-# Fólio Studio — Leitor & Editor de PDF Profissional
+# Papyra — Leitor & Editor de PDF Profissional
 
-**Fólio Studio** é um leitor e editor de PDF de desktop, multiplataforma, com
+**Papyra** é um leitor e editor de PDF de desktop, multiplataforma, com
 edição real de conteúdo: texto, imagens, formas e anotações diretamente no
 documento — não apenas visualização.
 
-O nome vem de *fólio*: a folha numerada de um manuscrito ou livro. É também
-uma referência direta ao PDF (*Portable Document Format*) — o "fólio digital"
-de hoje.
+O nome remete a *papiro*, um dos primeiros suportes de escrita da história —
+uma referência direta ao documento, ao ato de escrever e editar, e ao próprio
+PDF (*Portable Document Format*) como o "papiro digital" de hoje.
 
 ## Principais recursos
+
+**Página inicial (dashboard)**
+
+Ao abrir o programa, uma página inicial recebe o usuário com as opções
+principais em destaque: **Abrir PDF...**, **Novo documento** e a lista de
+**arquivos recentes** (clicáveis, com opção de remover individualmente ou
+limpar tudo). A qualquer momento é possível voltar a ela pelo botão de casa
+na barra de ferramentas, pelo menu Arquivo, ou com `Ctrl+Home`.
 
 **Modo Visualizar / Editar**
 
@@ -33,10 +41,10 @@ cada ícone) e a barra de estilo. Voltar ao modo leitura oculta tudo de novo.
 - **Editar texto existente**: com a ferramenta "Editar texto" ativa, todos os
   parágrafos da página ficam contornados, mostrando o que pode ser clicado.
   Clique em qualquer um para reescrever o **parágrafo inteiro** de uma vez
-  (não apenas uma linha) — o Fólio Studio reaproveita a fonte original
-  incorporada no arquivo quando possível, ou escolhe a fonte padrão mais
-  próxima. Pressione `Ctrl+Enter` para confirmar, `Esc` para cancelar, ou
-  apenas clique fora da caixa
+  (não apenas uma linha) — o Papyra reaproveita a fonte original incorporada
+  no arquivo quando possível, ou escolhe a fonte padrão mais próxima.
+  Pressione `Ctrl+Enter` para confirmar, `Esc` para cancelar, ou apenas
+  clique fora da caixa
 - **OCR em páginas digitalizadas**: ao tentar editar uma página sem texto
   pesquisável (um PDF digitalizado ou uma imagem escaneada), o programa
   oferece reconhecer o texto automaticamente via OCR (requer o
@@ -61,9 +69,9 @@ cada ícone) e a barra de estilo. Voltar ao modo leitura oculta tudo de novo.
 
 O reconhecimento de texto em páginas digitalizadas usa o mecanismo
 [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) através do
-PyMuPDF. Ele **não vem embutido** no Fólio Studio — sem ele, o programa
-funciona normalmente, só a opção de OCR fica indisponível (com um aviso
-explicando como instalar).
+PyMuPDF. Ele **não vem embutido** no Papyra — sem ele, o programa funciona
+normalmente, só a opção de OCR fica indisponível (com um aviso explicando
+como instalar).
 
 - **Windows**: instale o Tesseract (build da UB-Mannheim, com os idiomas
   "Portuguese" marcados na instalação):
@@ -113,28 +121,28 @@ gera o executável.
 python -m venv venv
 venv\Scripts\activate
 pip install -r requirements-build.txt
-pyinstaller --noconfirm folio_studio.spec
+pyinstaller --noconfirm papyra.spec
 ```
 
 Em ambos os casos, o resultado fica em:
 
 ```
-dist\FolioStudio\FolioStudio.exe
+dist\Papyra\Papyra.exe
 ```
 
-Essa pasta `dist\FolioStudio\` inteira é o que deve ser distribuído (o `.exe`
+Essa pasta `dist\Papyra\` inteira é o que deve ser distribuído (o `.exe`
 sozinho não funciona fora dela). Para gerar um único arquivo `.exe`
 autocontido (inicialização um pouco mais lenta), troque o `.spec` por:
 
 ```bat
-pyinstaller --noconfirm --onefile --windowed --name FolioStudio --icon assets\icon.ico --add-data "assets;assets" main.py
+pyinstaller --noconfirm --onefile --windowed --name Papyra --icon assets\icon.ico --add-data "assets;assets" main.py
 ```
 
 ## Estrutura do projeto
 
 ```
 main.py                     Ponto de entrada da aplicação
-folio_studio/
+papyra/
   document.py                Núcleo: abrir/salvar, edição de texto/imagens/
                               anotações/páginas, desfazer/refazer, busca,
                               metadados e sumário (sobre PyMuPDF)
@@ -142,12 +150,13 @@ folio_studio/
                               rolagem contínua, ferramentas de edição,
                               impressão
   tools.py                   Definição das ferramentas de edição
-  sidebar.py                  Painéis de miniaturas e sumário
+  home.py                    Página inicial (dashboard)
+  sidebar.py                 Painéis de miniaturas e sumário
   dialogs.py                 Diálogos: Sobre, Propriedades, Gerenciar páginas
-  main_window.py              Janela principal: menus, barras de ferramentas,
+  main_window.py             Janela principal: menus, barras de ferramentas,
                               abas, atalhos, arquivos recentes
-  theme.py                    Paleta de cores e folha de estilos (QSS)
-  icons.py                    Ícones vetoriais
+  theme.py                   Paleta de cores e folha de estilos (QSS)
+  icons.py                   Ícones vetoriais
 assets/icon.svg               Ícone da aplicação
 ```
 
@@ -155,6 +164,7 @@ assets/icon.svg               Ícone da aplicação
 
 | Ação | Atalho |
 |---|---|
+| Página inicial | `Ctrl+Home` |
 | Novo / Abrir / Salvar / Salvar como | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+Shift+S` |
 | Ativar/desativar modo de edição | `Ctrl+E` |
 | Imprimir | `Ctrl+P` |

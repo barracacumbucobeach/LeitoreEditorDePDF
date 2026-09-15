@@ -1,4 +1,4 @@
-"""Janela principal do Fólio Studio."""
+"""Janela principal do Papyra."""
 
 from __future__ import annotations
 
@@ -15,13 +15,14 @@ from PySide6.QtPrintSupport import QPrintDialog, QPrintPreviewDialog, QPrinter
 from PySide6.QtWidgets import (
     QApplication, QColorDialog, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QPushButton, QSizePolicy, QSpinBox, QTabWidget, QToolBar, QToolButton, QVBoxLayout,
-    QWidget,
+    QPushButton, QSizePolicy, QSpinBox, QTabBar, QTabWidget, QToolBar, QToolButton,
+    QVBoxLayout, QWidget,
 )
 
 from . import __app_name__, __organization__, __version__
 from .dialogs import AboutDialog, PageManagerDialog, PropertiesDialog
 from .document import PdfDocument
+from .home import HomeWidget
 from .icons import icon as ficon
 from .sidebar import DocumentSidebar
 from .theme import icon_color, stylesheet
@@ -108,7 +109,7 @@ class FindBar(QWidget):
         self.edit.returnPressed.connect(self.next_btn.click)
 
 
-class FolioMainWindow(QMainWindow):
+class PapyraMainWindow(QMainWindow):
     MAX_RECENT = 10
 
     def __init__(self):
@@ -135,11 +136,9 @@ class FolioMainWindow(QMainWindow):
         self._build_central()
         self._build_docks()
         self._build_statusbar()
+        self._build_home_tab()
         self._apply_theme()
         self._update_recent_menu()
-        self._on_tab_changed(-1)
-
-        self.new_document()
 
     # ------------------------------------------------------------------
     # Construção da interface
@@ -162,6 +161,10 @@ class FolioMainWindow(QMainWindow):
 
     def _build_actions(self):
         # Arquivo
+        self.act_home = self._act(
+            "Página inicial", "fa5s.home", "Ctrl+Home", tip="Ir para a página inicial",
+            slot=lambda: self.tabs.setCurrentIndex(self.tabs.indexOf(self.home_widget)),
+        )
         self.act_new = self._act("Novo", "fa5s.file", "Ctrl+N", tip="Novo documento", slot=self.new_document)
         self.act_open = self._act("Abrir...", "fa5s.folder-open", "Ctrl+O", tip="Abrir PDF", slot=self.open_document_dialog)
         self.act_save = self._act("Salvar", "fa5s.save", "Ctrl+S", tip="Salvar", slot=self.save_current)
@@ -229,6 +232,8 @@ class FolioMainWindow(QMainWindow):
         menubar = self.menuBar()
 
         m_file = menubar.addMenu("&Arquivo")
+        m_file.addAction(self.act_home)
+        m_file.addSeparator()
         m_file.addAction(self.act_new)
         m_file.addAction(self.act_open)
         self.recent_menu = m_file.addMenu("Abrir recente")
@@ -291,6 +296,8 @@ class FolioMainWindow(QMainWindow):
         tb_main.setIconSize(QSize(18, 18))
         tb_main.setToolButtonStyle(Qt.ToolButtonIconOnly)
         self.addToolBar(tb_main)
+        tb_main.addAction(self.act_home)
+        tb_main.addSeparator()
         for a in (self.act_new, self.act_open, self.act_save, self.act_print):
             tb_main.addAction(a)
         tb_main.addSeparator()
@@ -424,6 +431,17 @@ class FolioMainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.dock)
         self.dock.visibilityChanged.connect(self.act_toggle_sidebar.setChecked)
 
+    def _build_home_tab(self):
+        self.home_widget = HomeWidget()
+        self.home_widget.openRequested.connect(self.open_document_dialog)
+        self.home_widget.newRequested.connect(self.new_document)
+        self.home_widget.recentFileRequested.connect(self.open_document)
+        self.home_widget.recentFileRemoveRequested.connect(self._remove_recent)
+        self.home_widget.recentFilesCleared.connect(self._clear_recent)
+        index = self.tabs.addTab(self.home_widget, "Início")
+        self.tabs.tabBar().setTabButton(index, QTabBar.RightSide, None)
+        self.tabs.tabBar().setTabButton(index, QTabBar.LeftSide, None)
+
     def _build_statusbar(self):
         sb = self.statusBar()
 
@@ -459,6 +477,9 @@ class FolioMainWindow(QMainWindow):
         color = icon_color(self._dark_theme)
         for action, name in self._icon_actions:
             action.setIcon(ficon(name, color))
+        if hasattr(self, "home_widget"):
+            self.home_widget.refresh_theme(color)
+            self.tabs.setTabIcon(self.tabs.indexOf(self.home_widget), ficon("fa5s.home", color))
 
     def toggle_theme(self):
         self._dark_theme = not self._dark_theme
@@ -470,7 +491,8 @@ class FolioMainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _current_view(self) -> Optional[PdfView]:
-        return self.tabs.currentWidget()
+        widget = self.tabs.currentWidget()
+        return widget if isinstance(widget, PdfView) else None
 
     def _current_doc(self) -> Optional[PdfDocument]:
         view = self._current_view()
@@ -504,7 +526,7 @@ class FolioMainWindow(QMainWindow):
     def _refresh_tab_title(self, document: PdfDocument):
         for i in range(self.tabs.count()):
             view = self.tabs.widget(i)
-            if view.document is document:
+            if isinstance(view, PdfView) and view.document is document:
                 name = Path(document.path).name if document.path else (document.custom_title or "Sem título")
                 mark = " •" if document.modified else ""
                 self.tabs.setTabText(i, name + mark)
@@ -554,7 +576,7 @@ class FolioMainWindow(QMainWindow):
 
     def close_tab(self, index: int) -> bool:
         view = self.tabs.widget(index)
-        if view is None:
+        if not isinstance(view, PdfView):
             return True
         document = view.document
         if document.modified:
@@ -680,9 +702,12 @@ class FolioMainWindow(QMainWindow):
     # Ferramentas / estilo
     # ------------------------------------------------------------------
 
+    def _all_views(self) -> list:
+        return [self.tabs.widget(i) for i in range(self.tabs.count()) if isinstance(self.tabs.widget(i), PdfView)]
+
     def _set_tool(self, tool: Tool):
-        for i in range(self.tabs.count()):
-            self.tabs.widget(i).set_tool(tool)
+        for view in self._all_views():
+            view.set_tool(tool)
         self._update_mode_status()
 
     def _toggle_edit_mode(self, checked: bool):
@@ -693,8 +718,8 @@ class FolioMainWindow(QMainWindow):
             tool_action.setEnabled(checked)
         if checked:
             self.tool_actions[Tool.SELECT].setChecked(True)
-        for i in range(self.tabs.count()):
-            self.tabs.widget(i).set_edit_mode(checked)
+        for view in self._all_views():
+            view.set_edit_mode(checked)
         self._on_tab_changed(self.tabs.currentIndex())
 
     def _update_mode_status(self):
@@ -844,14 +869,21 @@ class FolioMainWindow(QMainWindow):
         if not files:
             empty = self.recent_menu.addAction("(vazio)")
             empty.setEnabled(False)
-            return
-        for path in files:
-            action = self.recent_menu.addAction(Path(path).name)
-            action.setToolTip(path)
-            action.triggered.connect(lambda _checked=False, p=path: self.open_document(p))
-        self.recent_menu.addSeparator()
-        clear_action = self.recent_menu.addAction("Limpar lista")
-        clear_action.triggered.connect(self._clear_recent)
+        else:
+            for path in files:
+                action = self.recent_menu.addAction(Path(path).name)
+                action.setToolTip(path)
+                action.triggered.connect(lambda _checked=False, p=path: self.open_document(p))
+            self.recent_menu.addSeparator()
+            clear_action = self.recent_menu.addAction("Limpar lista")
+            clear_action.triggered.connect(self._clear_recent)
+        if hasattr(self, "home_widget"):
+            self.home_widget.set_recent_files(files)
+
+    def _remove_recent(self, path: str):
+        files = [f for f in self._recent_files() if f != path]
+        self.settings.setValue("recent/files", files)
+        self._update_recent_menu()
 
     def _clear_recent(self):
         self.settings.setValue("recent/files", [])
@@ -877,7 +909,7 @@ class FolioMainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent):
         # Percorremos uma cópia estável dos widgets: fechar uma aba desloca os
         # índices das demais, então não podemos iterar por índice diretamente.
-        views = [self.tabs.widget(i) for i in range(self.tabs.count())]
+        views = self._all_views()
         for view in views:
             document = view.document
             if document.modified:

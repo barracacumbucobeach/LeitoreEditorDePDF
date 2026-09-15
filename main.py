@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
-"""Ponto de entrada do Fólio Studio — Leitor & Editor de PDF Profissional."""
+"""Ponto de entrada do Papyra — Leitor & Editor de PDF Profissional."""
 
 import sys
 from pathlib import Path
 
 from PySide6.QtWidgets import QApplication
 
-from folio_studio import __app_name__, __organization__
-from folio_studio.main_window import FolioMainWindow
+from papyra import __app_name__, __organization__
+from papyra.main_window import PapyraMainWindow
 
 
 def main() -> int:
@@ -16,7 +16,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
-    window = FolioMainWindow()
+    window = PapyraMainWindow()
     window.show()
 
     for arg in sys.argv[1:]:

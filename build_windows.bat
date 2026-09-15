@@ -1,11 +1,11 @@
 @echo off
-REM Gera o executavel do Folio Studio para Windows.
+REM Gera o executavel do Papyra para Windows.
 REM Execute este script dentro de uma janela do "cmd" ou PowerShell no Windows,
 REM na pasta raiz do projeto (onde este arquivo esta).
 
 setlocal
 
-echo === Folio Studio - build do .exe ===
+echo === Papyra - build do .exe ===
 
 REM 1) Cria e ativa um ambiente virtual, se ainda nao existir
 if not exist venv (
@@ -22,8 +22,8 @@ pip install pyinstaller
 
 REM 3) Gera o executavel usando o spec do projeto
 echo Empacotando com PyInstaller...
-pyinstaller --noconfirm folio_studio.spec
+pyinstaller --noconfirm papyra.spec
 
 echo.
-echo Concluido! O executavel esta em: dist\FolioStudio\FolioStudio.exe
+echo Concluido! O executavel esta em: dist\Papyra\Papyra.exe
 pause
