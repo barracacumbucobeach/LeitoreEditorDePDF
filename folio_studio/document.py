@@ -44,6 +44,22 @@ class TextSpan:
 
 
 @dataclass(frozen=True)
+class TextBlock:
+    """Um parágrafo inteiro (bloco de linhas), a unidade usada para editar
+    texto existente. Reaproveita o agrupamento em blocos que o próprio
+    PyMuPDF já faz na extração de texto."""
+
+    page: int
+    bbox: tuple
+    text: str
+    font: str
+    size: float
+    color: int
+    flags: int = 0
+    from_ocr: bool = False
+
+
+@dataclass(frozen=True)
 class ImageInfo:
     """Uma imagem inserida numa página."""
 
@@ -365,6 +381,104 @@ class PdfDocument(QObject):
 
         self._mark_modified()
         return True
+
+    def _blocks_from_dict(self, index: int, raw: dict, from_ocr: bool = False) -> list["TextBlock"]:
+        blocks: list[TextBlock] = []
+        for block in raw.get("blocks", []):
+            if block.get("type") != 0:
+                continue
+            lines_text = []
+            dominant = None
+            for line in block.get("lines", []):
+                spans = line.get("spans", [])
+                line_text = "".join(s.get("text", "") for s in spans)
+                if line_text.strip():
+                    lines_text.append(line_text)
+                if dominant is None:
+                    for s in spans:
+                        if s.get("text", "").strip():
+                            dominant = s
+                            break
+            text = "\n".join(lines_text)
+            if not text.strip() or dominant is None:
+                continue
+            blocks.append(
+                TextBlock(
+                    page=index,
+                    bbox=tuple(block["bbox"]),
+                    text=text,
+                    font=dominant.get("font", ""),
+                    size=float(dominant.get("size", 12.0)),
+                    color=int(dominant.get("color", 0)),
+                    flags=int(dominant.get("flags", 0)),
+                    from_ocr=from_ocr,
+                )
+            )
+        return blocks
+
+    def text_blocks(self, index: int) -> list[TextBlock]:
+        """Parágrafos editáveis de uma página (unidade usada pela ferramenta
+        'Editar texto': clicar em qualquer linha de um parágrafo permite
+        reescrever o parágrafo inteiro de uma vez)."""
+        page = self._doc[index]
+        raw = page.get_text("dict")
+        return self._blocks_from_dict(index, raw)
+
+    def replace_text_block(self, block: TextBlock, new_text: str, bg_color: tuple = (1, 1, 1)) -> bool:
+        """Substitui um parágrafo inteiro (apaga a área e reescreve, com
+        quebra de linha automática dentro dos limites originais)."""
+        self._push_undo()
+        page = self._doc[block.page]
+        rect = fitz.Rect(block.bbox)
+        self._redact(page, rect, fill=bg_color)
+
+        color = rgb_from_int(block.color)
+        fontbuffer, _ext = _extract_embedded_font(self._doc, page, block.font)
+        fontname = None
+        if fontbuffer:
+            try:
+                alias = f"FSB{abs(hash((block.font, block.page))) % 1_000_000}"
+                page.insert_font(fontname=alias, fontbuffer=fontbuffer)
+                fontname = alias
+            except Exception:
+                fontname = None
+        if not fontname:
+            fontname = pick_base_font(block.font, block.flags)
+
+        text = new_text if new_text.strip() else ""
+        if text:
+            fontsize = block.size
+            for _ in range(8):
+                overflow = page.insert_textbox(rect, text, fontsize=fontsize, fontname=fontname, color=color)
+                if overflow >= 0:
+                    break
+                fontsize = max(5.0, fontsize * 0.9)
+            else:
+                # última tentativa, no menor tamanho, aceitando corte se necessário
+                page.insert_textbox(rect, text, fontsize=fontsize, fontname=fontname, color=color)
+
+        self._mark_modified()
+        return True
+
+    def is_scanned_page(self, index: int) -> bool:
+        """Heurística: página sem texto pesquisável mas com imagem — indício
+        de página digitalizada, candidata a OCR."""
+        page = self._doc[index]
+        if page.get_text("text").strip():
+            return False
+        return bool(page.get_image_info())
+
+    def ocr_text_blocks(self, index: int, language: str = "por+eng", dpi: int = 300) -> list[TextBlock]:
+        """Reconhece o texto de uma página digitalizada via OCR (Tesseract) e
+        devolve parágrafos editáveis nas mesmas coordenadas da página real.
+
+        Não requer Tesseract instalado para o restante do programa funcionar;
+        apenas esta função levanta RuntimeError se ele não estiver disponível.
+        """
+        page = self._doc[index]
+        textpage = page.get_textpage_ocr(flags=0, language=language, dpi=dpi, full=True)
+        raw = page.get_text("dict", textpage=textpage)
+        return self._blocks_from_dict(index, raw, from_ocr=True)
 
     def search(self, query: str, page_index: Optional[int] = None) -> list[tuple]:
         results = []

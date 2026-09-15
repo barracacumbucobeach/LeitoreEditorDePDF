@@ -15,7 +15,8 @@ from PySide6.QtPrintSupport import QPrintDialog, QPrintPreviewDialog, QPrinter
 from PySide6.QtWidgets import (
     QApplication, QColorDialog, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QPushButton, QSpinBox, QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
+    QPushButton, QSizePolicy, QSpinBox, QTabWidget, QToolBar, QToolButton, QVBoxLayout,
+    QWidget,
 )
 
 from . import __app_name__, __organization__, __version__
@@ -24,7 +25,7 @@ from .document import PdfDocument
 from .icons import icon as ficon
 from .sidebar import DocumentSidebar
 from .theme import icon_color, stylesheet
-from .tools import TOOL_LABELS, Tool
+from .tools import TOOL_LABELS, TOOL_TOOLTIPS, Tool
 from .view import PdfView, print_document
 
 ASSETS_DIR = Path(__file__).resolve().parent.parent / "assets"
@@ -119,6 +120,7 @@ class FolioMainWindow(QMainWindow):
         if isinstance(self._dark_theme, str):
             self._dark_theme = self._dark_theme.lower() == "true"
         self._untitled_count = 0
+        self._edit_mode = False
 
         self.setWindowTitle(__app_name__)
         if ICON_PATH.exists():
@@ -195,9 +197,22 @@ class FolioMainWindow(QMainWindow):
         self.act_delete_page = self._act("Excluir página atual", "fa5s.trash", slot=self._delete_current_page)
         self.act_rotate_left = self._act("Girar página ↺", "fa5s.undo", slot=lambda: self._with_doc(lambda d: d.rotate_page(self._current_view().current_page, -90)))
         self.act_rotate_right = self._act("Girar página ↻", "fa5s.redo", slot=lambda: self._with_doc(lambda d: d.rotate_page(self._current_view().current_page, 90)))
+        self.act_ocr = self._act(
+            "Reconhecer texto (OCR)...", "fa5s.glasses",
+            tip="Reconhecer o texto de uma página digitalizada para poder editá-la",
+            slot=lambda: self._with_view(lambda v: v.run_ocr_current_page()),
+        )
 
         # Ajuda
         self.act_about = self._act(f"Sobre o {__app_name__}", None, slot=self._show_about)
+
+        # Modo de edição — por padrão o documento abre somente para leitura;
+        # as ferramentas de edição só aparecem depois de ativado.
+        self.act_edit_mode = self._act(
+            "Editar PDF", "fa5s.pen-nib", "Ctrl+E", checkable=True,
+            tip="Ativar as ferramentas de edição (o documento abre em modo de leitura)",
+            slot=self._toggle_edit_mode,
+        )
 
         # Ferramentas de edição
         self.tool_actions: dict[Tool, QAction] = {}
@@ -205,7 +220,7 @@ class FolioMainWindow(QMainWindow):
         self.tool_group.setExclusive(True)
         for tool, icon_name, shortcut in TOOL_SPECS:
             action = self._act(TOOL_LABELS[tool], icon_name, shortcut, checkable=True,
-                                tip=TOOL_LABELS[tool], slot=lambda checked, t=tool: checked and self._set_tool(t))
+                                tip=TOOL_TOOLTIPS[tool], slot=lambda checked, t=tool: checked and self._set_tool(t))
             self.tool_group.addAction(action)
             self.tool_actions[tool] = action
         self.tool_actions[Tool.SELECT].setChecked(True)
@@ -249,6 +264,8 @@ class FolioMainWindow(QMainWindow):
         m_view.addSeparator()
         m_view.addAction(self.act_toggle_sidebar)
         m_view.addAction(self.act_toggle_theme)
+        m_view.addSeparator()
+        m_view.addAction(self.act_edit_mode)
 
         m_insert = menubar.addMenu("&Inserir")
         for tool, _icon, _sc in TOOL_SPECS:
@@ -261,6 +278,8 @@ class FolioMainWindow(QMainWindow):
         m_page.addAction(self.act_rotate_left)
         m_page.addAction(self.act_rotate_right)
         m_page.addAction(self.act_delete_page)
+        m_page.addSeparator()
+        m_page.addAction(self.act_ocr)
 
         m_help = menubar.addMenu("Aj&uda")
         m_help.addAction(self.act_about)
@@ -297,55 +316,77 @@ class FolioMainWindow(QMainWindow):
         tb_main.addSeparator()
         tb_main.addAction(self.act_toggle_theme)
 
-        tb_tools = QToolBar("Ferramentas", self)
-        tb_tools.setObjectName("toolsToolBar")
-        tb_tools.setMovable(False)
-        tb_tools.setIconSize(QSize(18, 18))
-        self.addToolBar(Qt.LeftToolBarArea, tb_tools)
-        tb_tools.setOrientation(Qt.Vertical)
+        # Espaçador empurra o botão de modo para a direita, bem visível.
+        spacer = QWidget()
+        spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        tb_main.addWidget(spacer)
+
+        self.edit_mode_btn = QToolButton()
+        self.edit_mode_btn.setDefaultAction(self.act_edit_mode)
+        self.edit_mode_btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        self.edit_mode_btn.setObjectName("editModeButton")
+        self.edit_mode_btn.setCursor(Qt.PointingHandCursor)
+        tb_main.addWidget(self.edit_mode_btn)
+
+        # Paleta de ferramentas (só visível em modo de edição), com nome sob
+        # cada ícone para não deixar dúvida sobre a função de cada botão.
+        self.tb_tools = QToolBar("Ferramentas", self)
+        self.tb_tools.setObjectName("toolsToolBar")
+        self.tb_tools.setMovable(False)
+        self.tb_tools.setIconSize(QSize(20, 20))
+        self.tb_tools.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self.addToolBar(Qt.LeftToolBarArea, self.tb_tools)
+        self.tb_tools.setOrientation(Qt.Vertical)
         for tool, _icon, _sc in TOOL_SPECS:
-            tb_tools.addAction(self.tool_actions[tool])
+            self.tb_tools.addAction(self.tool_actions[tool])
+        self.tb_tools.setVisible(False)
 
-        tb_style = QToolBar("Estilo", self)
-        tb_style.setObjectName("styleToolBar")
-        tb_style.setMovable(False)
-        tb_style.setIconSize(QSize(16, 16))
+        # Barra de estilo (cor, preenchimento, espessura, fonte) — também só
+        # aparece em modo de edição.
+        self.tb_style = QToolBar("Estilo", self)
+        self.tb_style.setObjectName("styleToolBar")
+        self.tb_style.setMovable(False)
+        self.tb_style.setIconSize(QSize(16, 16))
         self.addToolBarBreak()
-        self.addToolBar(tb_style)
+        self.addToolBar(self.tb_style)
 
-        tb_style.addWidget(QLabel("  Cor: "))
-        self.stroke_color_btn = ColorButton(QColor(212, 69, 69), "Cor do traço")
+        self.tb_style.addWidget(QLabel("  Cor do traço: "))
+        self.stroke_color_btn = ColorButton(QColor(212, 69, 69), "Cor do traço/contorno")
         self.stroke_color_btn.colorChanged.connect(self._stroke_color_changed)
-        tb_style.addWidget(self.stroke_color_btn)
+        self.tb_style.addWidget(self.stroke_color_btn)
 
-        tb_style.addWidget(QLabel("  Preenchimento: "))
-        self.fill_color_btn = ColorButton(QColor(255, 255, 255, 0), "Cor de preenchimento")
+        self.tb_style.addWidget(QLabel("  Preenchimento: "))
+        self.fill_color_btn = ColorButton(QColor(255, 255, 255, 0), "Cor de preenchimento das formas")
         self.fill_color_btn.colorChanged.connect(self._fill_color_changed)
-        tb_style.addWidget(self.fill_color_btn)
-        self.fill_none_btn = QPushButton("Nenhum")
+        self.tb_style.addWidget(self.fill_color_btn)
+        self.fill_none_btn = QPushButton("Sem preenchimento")
         self.fill_none_btn.setFixedHeight(26)
+        self.fill_none_btn.setToolTip("Remover a cor de preenchimento das formas")
         self.fill_none_btn.clicked.connect(self._clear_fill_color)
-        tb_style.addWidget(self.fill_none_btn)
+        self.tb_style.addWidget(self.fill_none_btn)
 
-        tb_style.addWidget(QLabel("  Realce: "))
-        self.highlight_color_btn = ColorButton(QColor(255, 235, 59), "Cor do realce")
+        self.tb_style.addWidget(QLabel("  Cor do realce: "))
+        self.highlight_color_btn = ColorButton(QColor(255, 235, 59), "Cor do realce de texto")
         self.highlight_color_btn.colorChanged.connect(self._highlight_color_changed)
-        tb_style.addWidget(self.highlight_color_btn)
+        self.tb_style.addWidget(self.highlight_color_btn)
 
-        tb_style.addWidget(QLabel("  Espessura: "))
+        self.tb_style.addWidget(QLabel("  Espessura do traço: "))
         self.width_spin = QDoubleSpinBox()
         self.width_spin.setRange(0.5, 30.0)
         self.width_spin.setSingleStep(0.5)
         self.width_spin.setValue(2.0)
+        self.width_spin.setToolTip("Espessura da linha/contorno, em pontos")
         self.width_spin.valueChanged.connect(self._width_changed)
-        tb_style.addWidget(self.width_spin)
+        self.tb_style.addWidget(self.width_spin)
 
-        tb_style.addWidget(QLabel("  Fonte: "))
+        self.tb_style.addWidget(QLabel("  Tamanho da fonte: "))
         self.font_size_spin = QSpinBox()
         self.font_size_spin.setRange(4, 200)
         self.font_size_spin.setValue(13)
+        self.font_size_spin.setToolTip("Tamanho da fonte para texto novo")
         self.font_size_spin.valueChanged.connect(self._font_size_changed)
-        tb_style.addWidget(self.font_size_spin)
+        self.tb_style.addWidget(self.font_size_spin)
+        self.tb_style.setVisible(False)
 
     def _build_central(self):
         container = QWidget()
@@ -447,6 +488,7 @@ class FolioMainWindow(QMainWindow):
 
     def _add_document_tab(self, document: PdfDocument, title: str):
         view = PdfView(document)
+        view.set_edit_mode(self._edit_mode)
         view.pageChanged.connect(lambda i, v=view: self._on_page_changed(v, i))
         view.zoomChanged.connect(lambda z, v=view: self._on_zoom_changed(v, z))
         view.selectionChanged.connect(lambda hit: self.act_delete_selection.setEnabled(hit is not None))
@@ -539,12 +581,15 @@ class FolioMainWindow(QMainWindow):
         has_doc = view is not None
         for action in (self.act_save, self.act_save_as, self.act_print, self.act_print_preview,
                        self.act_properties, self.act_undo, self.act_redo, self.act_find,
-                       self.act_zoom_in, self.act_zoom_out, self.act_fit_page, self.act_fit_width,
-                       self.act_page_manager):
+                       self.act_zoom_in, self.act_zoom_out, self.act_fit_page, self.act_fit_width):
             action.setEnabled(has_doc)
+        for action in (self.act_page_manager, self.act_insert_blank, self.act_delete_page,
+                       self.act_rotate_left, self.act_rotate_right, self.act_ocr):
+            action.setEnabled(has_doc and self._edit_mode)
         if not has_doc:
             self.sidebar.set_document(None)
             self.setWindowTitle(__app_name__)
+            self._update_mode_status()
             return
         self.sidebar.set_document(view.document)
         self.sidebar.set_current_page(view.current_page)
@@ -554,6 +599,7 @@ class FolioMainWindow(QMainWindow):
         self._refresh_tab_title(view.document)
         self._sync_zoom_label(view.zoom)
         self.hide_find_bar()
+        self._update_mode_status()
 
     def _on_page_changed(self, view: PdfView, index: int):
         if view is self._current_view():
@@ -635,9 +681,29 @@ class FolioMainWindow(QMainWindow):
     # ------------------------------------------------------------------
 
     def _set_tool(self, tool: Tool):
-        self.tool_label.setText(TOOL_LABELS[tool])
         for i in range(self.tabs.count()):
             self.tabs.widget(i).set_tool(tool)
+        self._update_mode_status()
+
+    def _toggle_edit_mode(self, checked: bool):
+        self._edit_mode = checked
+        self.tb_tools.setVisible(checked)
+        self.tb_style.setVisible(checked)
+        for tool_action in self.tool_actions.values():
+            tool_action.setEnabled(checked)
+        if checked:
+            self.tool_actions[Tool.SELECT].setChecked(True)
+        for i in range(self.tabs.count()):
+            self.tabs.widget(i).set_edit_mode(checked)
+        self._on_tab_changed(self.tabs.currentIndex())
+
+    def _update_mode_status(self):
+        if not self._edit_mode:
+            self.tool_label.setText("Modo leitura — clique em “Editar PDF” para editar")
+            return
+        view = self._current_view()
+        label = TOOL_LABELS.get(view.tool, "") if view else ""
+        self.tool_label.setText(f"Editando: {label}" if label else "Modo de edição")
 
     def _stroke_color_changed(self, color: QColor):
         self._with_view(lambda v: setattr(v.tool_options, "stroke_color", (color.redF(), color.greenF(), color.blueF())))

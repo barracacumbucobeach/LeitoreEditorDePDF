@@ -19,12 +19,12 @@ from PySide6.QtGui import (
     QBrush, QColor, QCursor, QFont, QImage, QPainter, QPainterPath, QPen, QPixmap,
 )
 from PySide6.QtWidgets import (
-    QFileDialog, QGraphicsDropShadowEffect, QGraphicsLineItem, QGraphicsPathItem,
-    QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QTextEdit,
-    QWidget,
+    QApplication, QFileDialog, QGraphicsDropShadowEffect, QGraphicsLineItem,
+    QGraphicsPathItem, QGraphicsPixmapItem, QGraphicsRectItem, QGraphicsScene,
+    QGraphicsView, QMessageBox, QTextEdit, QWidget,
 )
 
-from .document import ImageInfo, PdfDocument, TextSpan
+from .document import ImageInfo, PdfDocument, TextBlock
 from .tools import DRAG_LINE_TOOLS, DRAG_RECT_TOOLS, Tool, ToolOptions
 
 PAGE_GAP = 20
@@ -61,7 +61,7 @@ class InlineTextEdit(QTextEdit):
         self._committed = False
 
     def keyPressEvent(self, event):
-        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and not (event.modifiers() & Qt.ShiftModifier):
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter) and (event.modifiers() & Qt.ControlModifier):
             self._commit()
             return
         if event.key() == Qt.Key_Escape:
@@ -105,6 +105,9 @@ class PdfView(QGraphicsView):
         self.zoom = 1.0
         self.tool = Tool.SELECT
         self.tool_options = ToolOptions()
+        self.edit_mode = False
+        self._ocr_blocks: dict[int, list] = {}
+        self._edit_hint_items: list = []
 
         self._page_items: list[PageItem] = []
         self._page_positions: list[float] = []
@@ -217,6 +220,7 @@ class PdfView(QGraphicsView):
         self._line_preview = None
         self._ink_path_item = None
         self._ink_scene_points = None
+        self._edit_hint_items = []
 
     def _schedule_render(self, immediate: bool = False):
         if immediate:
@@ -257,6 +261,35 @@ class PdfView(QGraphicsView):
                 img = self.document.render_page(i, zoom=self.zoom)
                 item.setPixmap(QPixmap.fromImage(img))
                 item.rendered = True
+        self._refresh_edit_text_hints()
+
+    def _refresh_edit_text_hints(self):
+        """No modo 'Editar texto', contorna todos os parágrafos clicáveis
+        das páginas visíveis, para deixar claro o que pode ser editado."""
+        self._clear_edit_text_hints()
+        if not self.edit_mode or self.tool != Tool.EDIT_TEXT or not self._page_items:
+            return
+        pen = QPen(QColor(SELECTION_COLOR))
+        pen.setStyle(Qt.DashLine)
+        pen.setWidth(1)
+        brush = QBrush(QColor(211, 164, 76, 30))
+        first, last = self._visible_page_range()
+        for i in range(first, last + 1):
+            blocks = self._ocr_blocks.get(i) or self.document.text_blocks(i)
+            for block in blocks:
+                rect_scene = self._pdf_rect_to_scene(i, block.bbox)
+                item = QGraphicsRectItem(rect_scene)
+                item.setPen(pen)
+                item.setBrush(brush)
+                item.setZValue(400)
+                item.setAcceptedMouseButtons(Qt.NoButton)
+                self.scene().addItem(item)
+                self._edit_hint_items.append(item)
+
+    def _clear_edit_text_hints(self):
+        for item in self._edit_hint_items:
+            self._remove_item_safely(item)
+        self._edit_hint_items = []
 
     def _update_current_page(self):
         center = self.mapToScene(self.viewport().rect().center()).y()
@@ -348,9 +381,19 @@ class PdfView(QGraphicsView):
     }
 
     def set_tool(self, tool: Tool):
+        if not self.edit_mode:
+            tool = Tool.SELECT
         self.tool = tool
         self._clear_selection()
-        self.viewport().setCursor(QCursor(self._CURSORS.get(tool, Qt.ArrowCursor)))
+        cursor = self._CURSORS.get(tool, Qt.ArrowCursor) if self.edit_mode else Qt.ArrowCursor
+        self.viewport().setCursor(QCursor(cursor))
+        self._refresh_edit_text_hints()
+
+    def set_edit_mode(self, enabled: bool):
+        """Alterna entre modo Visualizar (somente leitura) e Editar (todas as
+        ferramentas de edição habilitadas)."""
+        self.edit_mode = enabled
+        self.set_tool(self.tool if enabled else Tool.SELECT)
 
     # -- mapeamento de coordenadas --------------------------------------
 
@@ -397,7 +440,8 @@ class PdfView(QGraphicsView):
         scene_pos = self.mapToScene(event.pos())
 
         if self.tool == Tool.SELECT:
-            self._handle_select_press(scene_pos)
+            if self.edit_mode:
+                self._handle_select_press(scene_pos)
             return
 
         info = self._scene_to_pdf(scene_pos)
@@ -642,7 +686,15 @@ class PdfView(QGraphicsView):
         width = max(rect_scene.width() + 20, 80)
         height = max(rect_scene.height() + 10, font.pixelSize() + 16)
         proxy.resize(width, height)
-        editor.setFocus()
+        editor.setToolTip("Enter cria uma nova linha • Ctrl+Enter confirma • Esc cancela")
+
+        def grab_focus():
+            editor.setFocus(Qt.MouseFocusReason)
+            cursor = editor.textCursor()
+            cursor.select(cursor.SelectionType.Document)
+            editor.setTextCursor(cursor)
+
+        QTimer.singleShot(0, grab_focus)
 
         def finish(text):
             self._remove_item_safely(proxy)
@@ -656,24 +708,90 @@ class PdfView(QGraphicsView):
         editor.committed.connect(finish)
         editor.cancelled.connect(cancel)
 
+    def _find_text_block(self, page_idx: int, px: float, py: float):
+        blocks = self._ocr_blocks.get(page_idx) or self.document.text_blocks(page_idx)
+        match = None
+        for block in blocks:
+            x0, y0, x1, y1 = block.bbox
+            if x0 - 2 <= px <= x1 + 2 and y0 - 2 <= py <= y1 + 2:
+                match = block
+        return match
+
     def _start_edit_text(self, page_idx: int, pdf_pt: tuple):
         px, py = pdf_pt
-        target = None
-        for span in self.document.text_spans(page_idx):
-            x0, y0, x1, y1 = span.bbox
-            if x0 - 2 <= px <= x1 + 2 and y0 - 2 <= py <= y1 + 2:
-                target = span
+        target = self._find_text_block(page_idx, px, py)
+
+        if target is None and page_idx not in self._ocr_blocks and self.document.is_scanned_page(page_idx):
+            if self._offer_ocr(page_idx):
+                target = self._find_text_block(page_idx, px, py)
+
         if target is None:
-            self.statusMessage.emit("Nenhum texto encontrado neste ponto.")
+            msg = "Nenhum texto editável encontrado neste ponto."
+            self.statusMessage.emit(msg)
             return
 
         color = self._rgb_from_int(target.color)
+        from_ocr = target.from_ocr
 
         def commit(text):
             if text != target.text:
-                self.document.replace_text(target, text)
+                self.document.replace_text_block(target, text)
+                if from_ocr:
+                    self._ocr_blocks.pop(page_idx, None)
 
         self._open_inline_editor(page_idx, target.bbox, target.text, target.size * self.zoom, color, commit)
+
+    def _offer_ocr(self, page_idx: int) -> bool:
+        """Pergunta ao usuário se deseja reconhecer o texto (OCR) de uma
+        página digitalizada, para então poder editá-la. Retorna True se o
+        OCR foi executado com sucesso."""
+        reply = QMessageBox.question(
+            self, "Página digitalizada",
+            "Esta página parece ser uma imagem digitalizada, sem texto "
+            "pesquisável.\n\nDeseja executar reconhecimento de texto (OCR) "
+            "para poder editá-la?",
+            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+        )
+        if reply != QMessageBox.Yes:
+            return False
+        return self._run_ocr(page_idx)
+
+    def _run_ocr(self, page_idx: int) -> bool:
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            blocks = self.document.ocr_text_blocks(page_idx)
+        except RuntimeError as exc:
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(
+                self, "OCR indisponível",
+                "Não foi possível executar o reconhecimento de texto:\n\n"
+                f"{exc}\n\n"
+                "Instale o Tesseract OCR (https://github.com/tesseract-ocr/tesseract) "
+                "e tente novamente.",
+            )
+            return False
+        except Exception as exc:  # pragma: no cover - falha inesperada do OCR
+            QApplication.restoreOverrideCursor()
+            QMessageBox.warning(self, "OCR falhou", f"O reconhecimento de texto falhou:\n\n{exc}")
+            return False
+        QApplication.restoreOverrideCursor()
+        self._ocr_blocks[page_idx] = blocks
+        self._refresh_edit_text_hints()
+        return True
+
+    def run_ocr_current_page(self):
+        """Executa o OCR manualmente na página atual (ação de menu)."""
+        page_idx = self.current_page
+        if not self.document.is_scanned_page(page_idx) and page_idx not in self._ocr_blocks:
+            QMessageBox.information(self, "OCR", "Esta página já contém texto pesquisável e editável.")
+            return
+        if self._run_ocr(page_idx):
+            count = len(self._ocr_blocks.get(page_idx, []))
+            QMessageBox.information(
+                self, "OCR concluído",
+                f"{count} parágrafo(s) de texto reconhecido(s) nesta página.\n\n"
+                "Use a ferramenta \"Editar texto\" para editá-los.",
+            )
 
     def _start_add_text(self, page_idx: int, pdf_rect: tuple):
         opts = self.tool_options

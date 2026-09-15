@@ -10,6 +10,14 @@ de hoje.
 
 ## Principais recursos
 
+**Modo Visualizar / Editar**
+
+O documento sempre abre em **modo leitura** — um leitor de PDF comum, sem
+nenhuma ferramenta de edição visível ou ativa, para evitar alterações
+acidentais. Clique no botão **"Editar PDF"**, no canto superior direito (ou
+`Ctrl+E`), para revelar a paleta de ferramentas (com nome escrito embaixo de
+cada ícone) e a barra de estilo. Voltar ao modo leitura oculta tudo de novo.
+
 **Leitura**
 - Rolagem contínua entre páginas, com renderização sob demanda (rápida mesmo
   em documentos grandes)
@@ -22,9 +30,20 @@ de hoje.
 - Impressão e pré-visualização de impressão
 
 **Edição**
-- **Editar texto existente**: clique em qualquer trecho de texto do PDF e
-  edite-o no lugar — o Fólio Studio reaproveita a fonte original incorporada
-  no arquivo quando possível, ou escolhe a fonte padrão mais próxima
+- **Editar texto existente**: com a ferramenta "Editar texto" ativa, todos os
+  parágrafos da página ficam contornados, mostrando o que pode ser clicado.
+  Clique em qualquer um para reescrever o **parágrafo inteiro** de uma vez
+  (não apenas uma linha) — o Fólio Studio reaproveita a fonte original
+  incorporada no arquivo quando possível, ou escolhe a fonte padrão mais
+  próxima. Pressione `Ctrl+Enter` para confirmar, `Esc` para cancelar, ou
+  apenas clique fora da caixa
+- **OCR em páginas digitalizadas**: ao tentar editar uma página sem texto
+  pesquisável (um PDF digitalizado ou uma imagem escaneada), o programa
+  oferece reconhecer o texto automaticamente via OCR (requer o
+  [Tesseract OCR](https://github.com/tesseract-ocr/tesseract) instalado no
+  sistema — veja abaixo). Depois do OCR, o texto reconhecido pode ser editado
+  normalmente. Também é possível disparar o OCR manualmente pelo menu
+  Página → "Reconhecer texto (OCR)..."
 - **Imagens**: inserir, substituir, mover, redimensionar e excluir imagens do
   documento
 - **Anotações e formas**: realce de texto, retângulo, elipse, linha, seta,
@@ -37,6 +56,21 @@ de hoje.
 - **Propriedades do documento**: título, autor, assunto, palavras-chave
 - **Desfazer/Refazer** completo para qualquer operação de edição
 - Temas claro e escuro
+
+### OCR — instalando o Tesseract (opcional)
+
+O reconhecimento de texto em páginas digitalizadas usa o mecanismo
+[Tesseract OCR](https://github.com/tesseract-ocr/tesseract) através do
+PyMuPDF. Ele **não vem embutido** no Fólio Studio — sem ele, o programa
+funciona normalmente, só a opção de OCR fica indisponível (com um aviso
+explicando como instalar).
+
+- **Windows**: instale o Tesseract (build da UB-Mannheim, com os idiomas
+  "Portuguese" marcados na instalação):
+  https://github.com/UB-Mannheim/tesseract/wiki — e garanta que a pasta de
+  instalação esteja no `PATH` do sistema.
+- **Linux**: `sudo apt install tesseract-ocr tesseract-ocr-por`
+- **macOS**: `brew install tesseract tesseract-lang`
 
 ## Tecnologia
 
@@ -108,7 +142,7 @@ folio_studio/
                               rolagem contínua, ferramentas de edição,
                               impressão
   tools.py                   Definição das ferramentas de edição
-  sidebar.py                 Painéis de miniaturas e sumário
+  sidebar.py                  Painéis de miniaturas e sumário
   dialogs.py                 Diálogos: Sobre, Propriedades, Gerenciar páginas
   main_window.py              Janela principal: menus, barras de ferramentas,
                               abas, atalhos, arquivos recentes
@@ -122,11 +156,13 @@ assets/icon.svg               Ícone da aplicação
 | Ação | Atalho |
 |---|---|
 | Novo / Abrir / Salvar / Salvar como | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+Shift+S` |
+| Ativar/desativar modo de edição | `Ctrl+E` |
 | Imprimir | `Ctrl+P` |
 | Desfazer / Refazer | `Ctrl+Z` / `Ctrl+Y` |
 | Localizar | `Ctrl+F` |
 | Ampliar / Reduzir / 100% | `Ctrl++` / `Ctrl+-` / `Ctrl+0` |
-| Ferramentas de edição | `Ctrl+1`…`Ctrl+9` |
+| Ferramentas de edição (em modo de edição) | `Ctrl+1`…`Ctrl+9` |
+| Confirmar texto digitado / cancelar | `Ctrl+Enter` / `Esc` |
 | Excluir objeto selecionado | `Delete` |
-| Girar visualização com o mouse | `Ctrl` + roda do mouse (zoom) |
+| Zoom com a roda do mouse | `Ctrl` + roda do mouse |
 | Arrastar a página | Botão do meio do mouse |

@@ -160,6 +160,40 @@ def stylesheet(dark: bool) -> str:
     }}
     QToolButton::menu-indicator {{ width: 0; }}
 
+    /* ---------- Botão de alternância Visualizar / Editar ---------- */
+    QToolButton#editModeButton {{
+        background: {p['surface_alt']};
+        border: 1px solid {p['border']};
+        border-radius: 14px;
+        padding: 6px 16px 6px 12px;
+        margin: 2px 4px;
+        font-weight: 600;
+        color: {p['text']};
+    }}
+    QToolButton#editModeButton:hover {{
+        background: {p['surface_hover']};
+    }}
+    QToolButton#editModeButton:checked {{
+        background: {p['accent']};
+        color: {p['accent_text']};
+        border: 1px solid {p['accent']};
+    }}
+
+    /* ---------- Paleta de ferramentas (lateral) ---------- */
+    QToolBar#toolsToolBar {{
+        spacing: 3px;
+        padding: 8px 4px;
+    }}
+    QToolBar#toolsToolBar QToolButton {{
+        min-width: 76px;
+        max-width: 76px;
+        padding: 6px 2px;
+        font-size: 11px;
+    }}
+    QToolBar#styleToolBar {{
+        padding: 4px 10px;
+    }}
+
     /* ---------- Barra de status ---------- */
     QStatusBar {{
         background: {p['bg_alt']};
