@@ -59,6 +59,43 @@ Para abrir um arquivo diretamente:
 python main.py caminho/para/arquivo.pdf
 ```
 
+## Gerando o executável (.exe) para Windows
+
+O empacotamento usa o [PyInstaller](https://pyinstaller.org/), que **precisa
+ser executado no Windows** (ele não faz compilação cruzada a partir do
+Linux/Mac). O projeto já traz um `.spec` pronto e um script que automatiza
+tudo.
+
+**Opção 1 — script automático**
+
+Copie a pasta do projeto para uma máquina Windows com Python 3.11+ instalado
+e dê duplo clique em `build_windows.bat` (ou rode-o pelo `cmd`/PowerShell na
+raiz do projeto). Ele cria um ambiente virtual, instala as dependências e
+gera o executável.
+
+**Opção 2 — comandos manuais**
+
+```bat
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements-build.txt
+pyinstaller --noconfirm folio_studio.spec
+```
+
+Em ambos os casos, o resultado fica em:
+
+```
+dist\FolioStudio\FolioStudio.exe
+```
+
+Essa pasta `dist\FolioStudio\` inteira é o que deve ser distribuído (o `.exe`
+sozinho não funciona fora dela). Para gerar um único arquivo `.exe`
+autocontido (inicialização um pouco mais lenta), troque o `.spec` por:
+
+```bat
+pyinstaller --noconfirm --onefile --windowed --name FolioStudio --icon assets\icon.ico --add-data "assets;assets" main.py
+```
+
 ## Estrutura do projeto
 
 ```
