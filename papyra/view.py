@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QGraphicsView, QMessageBox, QTextEdit, QWidget,
 )
 
-from .document import ImageInfo, PdfDocument, TextBlock
+from .document import ImageInfo, PdfDocument, TextSpan
 from .tools import DRAG_LINE_TOOLS, DRAG_RECT_TOOLS, Tool, ToolOptions
 
 PAGE_GAP = 20
@@ -106,7 +106,7 @@ class PdfView(QGraphicsView):
         self.tool = Tool.SELECT
         self.tool_options = ToolOptions()
         self.edit_mode = False
-        self._ocr_blocks: dict[int, list] = {}
+        self._ocr_spans: dict[int, list[TextSpan]] = {}
         self._edit_hint_items: list = []
         self._pending_signature: Optional[bytes] = None
 
@@ -265,8 +265,9 @@ class PdfView(QGraphicsView):
         self._refresh_edit_text_hints()
 
     def _refresh_edit_text_hints(self):
-        """No modo 'Editar texto', contorna todos os parágrafos clicáveis
-        das páginas visíveis, para deixar claro o que pode ser editado."""
+        """No modo 'Editar texto', contorna todos os trechos clicáveis das
+        páginas visíveis (um por estilo — palavra, frase ou linha), para
+        deixar claro exatamente o que será editado a cada clique."""
         self._clear_edit_text_hints()
         if not self.edit_mode or self.tool != Tool.EDIT_TEXT or not self._page_items:
             return
@@ -276,9 +277,9 @@ class PdfView(QGraphicsView):
         brush = QBrush(QColor(211, 164, 76, 30))
         first, last = self._visible_page_range()
         for i in range(first, last + 1):
-            blocks = self._ocr_blocks.get(i) or self.document.text_blocks(i)
-            for block in blocks:
-                rect_scene = self._pdf_rect_to_scene(i, block.bbox)
+            spans = self._ocr_spans.get(i) or self.document.text_spans(i)
+            for span in spans:
+                rect_scene = self._pdf_rect_to_scene(i, span.bbox)
                 item = QGraphicsRectItem(rect_scene)
                 item.setPen(pen)
                 item.setBrush(brush)
@@ -676,22 +677,62 @@ class PdfView(QGraphicsView):
     # Edição de texto (inline)
     # ------------------------------------------------------------------
 
-    def _open_inline_editor(self, page_idx, bbox, initial_text, font_px, color_rgb, on_commit):
+    @staticmethod
+    def _approx_font_family(font_name: str, flags: int) -> str:
+        """Aproxima a fonte original por uma fonte comum do sistema, só para
+        o editor flutuante *parecer* com o texto real enquanto se digita."""
+        name = (font_name or "").lower()
+        mono = bool(flags & 8) or any(k in name for k in ("mono", "courier", "consolas", "menlo"))
+        serif = bool(flags & 4) or any(
+            k in name for k in ("times", "georgia", "serif", "garamond", "cambria", "minion", "palatino")
+        )
+        if mono:
+            return "Courier New"
+        if serif:
+            return "Times New Roman"
+        return "Arial"
+
+    def _sample_background_color(self, page_idx: int, bbox: tuple) -> QColor:
+        """Amostra a cor de fundo da página logo acima do trecho de texto,
+        para que a caixa de edição se confunda com o papel em vez de aparecer
+        como um retângulo branco por cima de um documento colorido/escuro."""
+        try:
+            item = self._page_items[page_idx]
+            pixmap = item.pixmap()
+            if pixmap.isNull():
+                return QColor(255, 255, 255)
+            x0, y0, x1, _y1 = bbox
+            probe_scene = item.mapToScene(QPointF((x0 + 2) * self.zoom, max(0.0, (y0 - 3) * self.zoom)))
+            local = item.mapFromScene(probe_scene)
+            img = pixmap.toImage()
+            x = max(0, min(img.width() - 1, int(local.x())))
+            y = max(0, min(img.height() - 1, int(local.y())))
+            return QColor(img.pixelColor(x, y))
+        except Exception:
+            return QColor(255, 255, 255)
+
+    def _open_inline_editor(
+        self, page_idx, bbox, initial_text, font_px, color_rgb, on_commit,
+        font_name: str = "", font_flags: int = 0,
+    ):
         rect_scene = self._pdf_rect_to_scene(page_idx, bbox)
         editor = InlineTextEdit(initial_text)
-        font = QFont()
+        font = QFont(self._approx_font_family(font_name, font_flags))
         font.setPixelSize(max(9, int(font_px)))
+        font.setBold(bool(font_flags & 16))
+        font.setItalic(bool(font_flags & 2))
         editor.setFont(font)
         color = QColor.fromRgbF(*color_rgb)
+        bg = self._sample_background_color(page_idx, bbox)
         editor.setStyleSheet(
-            f"QTextEdit {{ background: #ffffff; color: {color.name()}; "
-            f"border: 2px solid {SELECTION_COLOR}; padding: 1px; }}"
+            f"QTextEdit {{ background: {bg.name()}; color: {color.name()}; "
+            f"border: 1px dashed {SELECTION_COLOR}; padding: 1px; }}"
         )
         proxy = self.scene().addWidget(editor)
         proxy.setZValue(1000)
         proxy.setPos(rect_scene.topLeft())
-        width = max(rect_scene.width() + 20, 80)
-        height = max(rect_scene.height() + 10, font.pixelSize() + 16)
+        width = max(rect_scene.width() + 12, 40)
+        height = max(rect_scene.height() + 6, font.pixelSize() + 10)
         proxy.resize(width, height)
         editor.setToolTip("Enter cria uma nova linha • Ctrl+Enter confirma • Esc cancela")
 
@@ -715,22 +756,28 @@ class PdfView(QGraphicsView):
         editor.committed.connect(finish)
         editor.cancelled.connect(cancel)
 
-    def _find_text_block(self, page_idx: int, px: float, py: float):
-        blocks = self._ocr_blocks.get(page_idx) or self.document.text_blocks(page_idx)
-        match = None
-        for block in blocks:
-            x0, y0, x1, y1 = block.bbox
+    def _find_text_span(self, page_idx: int, px: float, py: float):
+        """Encontra o trecho de texto (span, já segmentado por estilo) sob o
+        ponto clicado. Se vários se sobrepõem, escolhe o de menor área — o
+        mais específico, evitando "roubar" o clique de um span vizinho."""
+        spans = self._ocr_spans.get(page_idx) or self.document.text_spans(page_idx)
+        best = None
+        best_area = None
+        for span in spans:
+            x0, y0, x1, y1 = span.bbox
             if x0 - 2 <= px <= x1 + 2 and y0 - 2 <= py <= y1 + 2:
-                match = block
-        return match
+                area = max(1e-6, (x1 - x0) * (y1 - y0))
+                if best is None or area < best_area:
+                    best, best_area = span, area
+        return best
 
     def _start_edit_text(self, page_idx: int, pdf_pt: tuple):
         px, py = pdf_pt
-        target = self._find_text_block(page_idx, px, py)
+        target = self._find_text_span(page_idx, px, py)
 
-        if target is None and page_idx not in self._ocr_blocks and self.document.is_scanned_page(page_idx):
+        if target is None and page_idx not in self._ocr_spans and self.document.is_scanned_page(page_idx):
             if self._offer_ocr(page_idx):
-                target = self._find_text_block(page_idx, px, py)
+                target = self._find_text_span(page_idx, px, py)
 
         if target is None:
             msg = "Nenhum texto editável encontrado neste ponto."
@@ -738,15 +785,18 @@ class PdfView(QGraphicsView):
             return
 
         color = self._rgb_from_int(target.color)
-        from_ocr = target.from_ocr
+        from_ocr = page_idx in self._ocr_spans
 
         def commit(text):
             if text != target.text:
-                self.document.replace_text_block(target, text)
+                self.document.replace_text(target, text)
                 if from_ocr:
-                    self._ocr_blocks.pop(page_idx, None)
+                    self._ocr_spans.pop(page_idx, None)
 
-        self._open_inline_editor(page_idx, target.bbox, target.text, target.size * self.zoom, color, commit)
+        self._open_inline_editor(
+            page_idx, target.bbox, target.text, target.size * self.zoom, color, commit,
+            font_name=target.font, font_flags=target.flags,
+        )
 
     def _offer_ocr(self, page_idx: int) -> bool:
         """Pergunta ao usuário se deseja reconhecer o texto (OCR) de uma
@@ -766,7 +816,7 @@ class PdfView(QGraphicsView):
     def _run_ocr(self, page_idx: int) -> bool:
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
-            blocks = self.document.ocr_text_blocks(page_idx)
+            spans = self.document.ocr_text_spans(page_idx)
         except RuntimeError as exc:
             QApplication.restoreOverrideCursor()
             QMessageBox.warning(
@@ -782,21 +832,21 @@ class PdfView(QGraphicsView):
             QMessageBox.warning(self, "OCR falhou", f"O reconhecimento de texto falhou:\n\n{exc}")
             return False
         QApplication.restoreOverrideCursor()
-        self._ocr_blocks[page_idx] = blocks
+        self._ocr_spans[page_idx] = spans
         self._refresh_edit_text_hints()
         return True
 
     def run_ocr_current_page(self):
         """Executa o OCR manualmente na página atual (ação de menu)."""
         page_idx = self.current_page
-        if not self.document.is_scanned_page(page_idx) and page_idx not in self._ocr_blocks:
+        if not self.document.is_scanned_page(page_idx) and page_idx not in self._ocr_spans:
             QMessageBox.information(self, "OCR", "Esta página já contém texto pesquisável e editável.")
             return
         if self._run_ocr(page_idx):
-            count = len(self._ocr_blocks.get(page_idx, []))
+            count = len(self._ocr_spans.get(page_idx, []))
             QMessageBox.information(
                 self, "OCR concluído",
-                f"{count} parágrafo(s) de texto reconhecido(s) nesta página.\n\n"
+                f"{count} trecho(s) de texto reconhecido(s) nesta página.\n\n"
                 "Use a ferramenta \"Editar texto\" para editá-los.",
             )
 

@@ -50,13 +50,16 @@ cada ícone) e a barra de estilo. Voltar ao modo leitura oculta tudo de novo.
 - Impressão e pré-visualização de impressão
 
 **Edição**
-- **Editar texto existente**: com a ferramenta "Editar texto" ativa, todos os
-  parágrafos da página ficam contornados, mostrando o que pode ser clicado.
-  Clique em qualquer um para reescrever o **parágrafo inteiro** de uma vez
-  (não apenas uma linha) — o Papyra reaproveita a fonte original incorporada
-  no arquivo quando possível, ou escolhe a fonte padrão mais próxima.
-  Pressione `Ctrl+Enter` para confirmar, `Esc` para cancelar, ou apenas
-  clique fora da caixa
+- **Editar texto existente**: com a ferramenta "Editar texto" ativa, cada
+  trecho de texto com seu próprio estilo (uma palavra em negrito, um link,
+  uma linha inteira em fonte uniforme...) fica contornado individualmente.
+  Clique em qualquer um para editar **só aquele trecho**, no lugar exato,
+  mantendo fonte, tamanho, cor e posição originais — editar uma palavra não
+  reformata o resto do parágrafo, e trechos vizinhos com estilos diferentes
+  nunca se misturam. O Papyra reaproveita a fonte original incorporada no
+  arquivo quando possível, ou escolhe a fonte padrão mais próxima. Pressione
+  `Ctrl+Enter` para confirmar, `Esc` para cancelar, ou apenas clique fora da
+  caixa
 - **OCR em páginas digitalizadas**: ao tentar editar uma página sem texto
   pesquisável (um PDF digitalizado ou uma imagem escaneada), o programa
   oferece reconhecer o texto automaticamente via OCR (requer o
