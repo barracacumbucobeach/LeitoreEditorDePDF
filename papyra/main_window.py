@@ -13,14 +13,17 @@ from PySide6.QtGui import (
 )
 from PySide6.QtPrintSupport import QPrintDialog, QPrintPreviewDialog, QPrinter
 from PySide6.QtWidgets import (
-    QApplication, QColorDialog, QComboBox, QDockWidget, QDoubleSpinBox, QFileDialog,
-    QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QPushButton, QSizePolicy, QSpinBox, QTabBar, QTabWidget, QToolBar, QToolButton,
-    QVBoxLayout, QWidget,
+    QApplication, QButtonGroup, QColorDialog, QComboBox, QDockWidget, QDoubleSpinBox,
+    QFileDialog, QFrame, QGridLayout, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
+    QMainWindow, QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QSpinBox,
+    QTabBar, QTabWidget, QToolBar, QToolButton, QVBoxLayout, QWidget,
 )
 
 from . import __app_name__, __organization__, __version__
-from .dialogs import AboutDialog, PageManagerDialog, PropertiesDialog
+from .dialogs import (
+    AboutDialog, ConvertDialog, MergeFilesDialog, PageManagerDialog, ProtectDialog,
+    PropertiesDialog, SignatureDialog, SplitDialog,
+)
 from .document import PdfDocument
 from .home import HomeWidget
 from .icons import icon as ficon
@@ -43,6 +46,8 @@ TOOL_SPECS = [
     (Tool.ARROW, "fa5s.arrow-right", "Ctrl+8"),
     (Tool.INK, "fa5s.pen", "Ctrl+9"),
     (Tool.IMAGE, "fa5s.image", ""),
+    (Tool.LINK, "fa5s.link", ""),
+    (Tool.SIGNATURE, "fa5s.signature", ""),
     (Tool.NOTE, "fa5s.sticky-note", ""),
     (Tool.ERASER, "fa5s.eraser", ""),
 ]
@@ -206,6 +211,29 @@ class PapyraMainWindow(QMainWindow):
             slot=lambda: self._with_view(lambda v: v.run_ocr_current_page()),
         )
 
+        # Ferramentas (converter, mesclar, dividir, proteger, assinar)
+        self.act_convert = self._act(
+            "Converter PDF...", "fa5s.exchange-alt",
+            tip="Converter para Word, Excel, PowerPoint, imagem ou HTML",
+            slot=self._open_convert_dialog,
+        )
+        self.act_merge = self._act(
+            "Mesclar PDF...", "fa5s.object-group",
+            tip="Mesclar vários arquivos PDF em um só", slot=self._open_merge_dialog,
+        )
+        self.act_split = self._act(
+            "Dividir PDF...", "fa5s.cut",
+            tip="Dividir o documento em vários arquivos", slot=self._open_split_dialog,
+        )
+        self.act_protect = self._act(
+            "Proteger PDF...", "fa5s.lock",
+            tip="Adicionar ou remover a senha do documento", slot=self._open_protect_dialog,
+        )
+        self.act_sign = self._act(
+            "Assinar PDF...", "fa5s.signature",
+            tip="Criar e carimbar uma assinatura visual no documento", slot=self._open_sign_dialog,
+        )
+
         # Ajuda
         self.act_about = self._act(f"Sobre o {__app_name__}", None, slot=self._show_about)
 
@@ -285,6 +313,13 @@ class PapyraMainWindow(QMainWindow):
         m_page.addAction(self.act_delete_page)
         m_page.addSeparator()
         m_page.addAction(self.act_ocr)
+
+        m_tools = menubar.addMenu("Fe&rramentas")
+        m_tools.addAction(self.act_convert)
+        m_tools.addAction(self.act_merge)
+        m_tools.addAction(self.act_split)
+        m_tools.addAction(self.act_protect)
+        m_tools.addAction(self.act_sign)
 
         m_help = menubar.addMenu("Aj&uda")
         m_help.addAction(self.act_about)
@@ -396,6 +431,14 @@ class PapyraMainWindow(QMainWindow):
         self.tb_style.setVisible(False)
 
     def _build_central(self):
+        outer_container = QWidget()
+        outer = QHBoxLayout(outer_container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self.nav_rail = self._build_nav_rail()
+        outer.addWidget(self.nav_rail)
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -417,7 +460,71 @@ class PapyraMainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         layout.addWidget(self.tabs, 1)
 
-        self.setCentralWidget(container)
+        outer.addWidget(container, 1)
+        self.setCentralWidget(outer_container)
+
+    def _nav_button(self, layout, text: str, icon_name: str, slot=None, checkable: bool = False) -> QToolButton:
+        btn = QToolButton()
+        btn.setText(f"  {text}")
+        btn.setIcon(ficon(icon_name, icon_color(self._dark_theme)))
+        btn.setIconSize(QSize(15, 15))
+        btn.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+        btn.setObjectName("navItem")
+        btn.setCheckable(checkable)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        if slot:
+            btn.clicked.connect(slot)
+        self._nav_icon_buttons.append((btn, icon_name))
+        layout.addWidget(btn)
+        return btn
+
+    def _build_nav_rail(self) -> QWidget:
+        self._nav_icon_buttons: list[tuple[QToolButton, str]] = []
+        rail = QWidget()
+        rail.setObjectName("navRail")
+        rail.setFixedWidth(196)
+        layout = QVBoxLayout(rail)
+        layout.setContentsMargins(12, 14, 12, 14)
+        layout.setSpacing(2)
+
+        brand_row = QHBoxLayout()
+        brand_icon = QLabel()
+        if ICON_PATH.exists():
+            brand_icon.setPixmap(QIcon(str(ICON_PATH)).pixmap(22, 22))
+        brand_row.addWidget(brand_icon)
+        brand_label = QLabel(__app_name__)
+        brand_label.setObjectName("navBrand")
+        brand_row.addWidget(brand_label)
+        brand_row.addStretch(1)
+        layout.addLayout(brand_row)
+        layout.addSpacing(12)
+
+        self.nav_group = QButtonGroup(self)
+        self.nav_group.setExclusive(True)
+        self.nav_btn_home = self._nav_button(layout, "Início", "fa5s.home", self._go_home_recent, checkable=True)
+        self._nav_button(layout, "Abrir", "fa5s.folder-open", self.open_document_dialog)
+        self.nav_btn_recent = self._nav_button(layout, "Recentes", "fa5s.history", self._go_home_recent, checkable=True)
+        self.nav_btn_favorites = self._nav_button(layout, "Favoritos", "fa5s.star", self._go_home_favorites, checkable=True)
+        self._nav_button(layout, "Nuvem", "fa5s.cloud", self._show_cloud_info)
+        for btn in (self.nav_btn_home, self.nav_btn_recent, self.nav_btn_favorites):
+            self.nav_group.addButton(btn)
+        self.nav_btn_home.setChecked(True)
+
+        layout.addSpacing(18)
+        section = QLabel("FERRAMENTAS")
+        section.setObjectName("navSectionLabel")
+        layout.addWidget(section)
+
+        self._nav_button(layout, "Editar PDF", "fa5s.pen-nib", lambda: self._activate_edit_and_tool(Tool.EDIT_TEXT))
+        self._nav_button(layout, "Converter", "fa5s.exchange-alt", self._open_convert_dialog)
+        self._nav_button(layout, "Mesclar", "fa5s.object-group", self._open_merge_dialog)
+        self._nav_button(layout, "Dividir", "fa5s.cut", self._open_split_dialog)
+        self._nav_button(layout, "Proteger", "fa5s.lock", self._open_protect_dialog)
+        self._nav_button(layout, "Assinar", "fa5s.signature", self._open_sign_dialog)
+
+        layout.addStretch(1)
+        return rail
 
     def _build_docks(self):
         self.sidebar = DocumentSidebar()
@@ -431,6 +538,81 @@ class PapyraMainWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, self.dock)
         self.dock.visibilityChanged.connect(self.act_toggle_sidebar.setChecked)
 
+        self._build_tools_panel_dock()
+
+    def _tool_card(self, grid, row, col, label, icon_name, slot):
+        btn = QToolButton()
+        btn.setObjectName("toolCard")
+        btn.setText(label)
+        btn.setIcon(ficon(icon_name, icon_color(self._dark_theme)))
+        btn.setIconSize(QSize(22, 22))
+        btn.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        btn.setMinimumSize(88, 68)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.clicked.connect(slot)
+        self._tools_panel_icon_buttons.append((btn, icon_name))
+        grid.addWidget(btn, row, col)
+        return btn
+
+    def _tool_group(self, layout, title: str, items: list):
+        label = QLabel(title.upper())
+        label.setObjectName("toolsGroupTitle")
+        layout.addWidget(label)
+        grid = QGridLayout()
+        grid.setSpacing(8)
+        layout.addLayout(grid)
+        for i, (text, icon_name, slot) in enumerate(items):
+            self._tool_card(grid, i // 3, i % 3, text, icon_name, slot)
+
+    def _build_tools_panel_dock(self):
+        self._tools_panel_icon_buttons: list[tuple[QToolButton, str]] = []
+        panel = QWidget()
+        panel.setObjectName("toolsPanelRoot")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(4)
+
+        title = QLabel("Ferramentas de Edição")
+        title.setObjectName("toolsPanelTitle")
+        layout.addWidget(title)
+        subtitle = QLabel("Modifique textos, imagens e muito mais.")
+        subtitle.setObjectName("toolsPanelSubtitle")
+        layout.addWidget(subtitle)
+
+        self._tool_group(layout, "Editar PDF", [
+            ("Texto", "fa5s.font", lambda: self._activate_edit_and_tool(Tool.ADD_TEXT)),
+            ("Imagem", "fa5s.image", lambda: self._activate_edit_and_tool(Tool.IMAGE)),
+            ("Link", "fa5s.link", lambda: self._activate_edit_and_tool(Tool.LINK)),
+            ("Apagar", "fa5s.eraser", lambda: self._activate_edit_and_tool(Tool.ERASER)),
+            ("Página", "fa5s.file", self._insert_blank_page_after_current),
+            ("Girar", "fa5s.redo", self._rotate_current_page),
+        ])
+        self._tool_group(layout, "Converter PDF", [
+            ("Word", "fa5s.file-word", self._open_convert_dialog),
+            ("Excel", "fa5s.file-excel", self._open_convert_dialog),
+            ("PPT", "fa5s.file-powerpoint", self._open_convert_dialog),
+            ("Imagem", "fa5s.file-image", self._open_convert_dialog),
+            ("HTML", "fa5s.file-code", self._open_convert_dialog),
+        ])
+        self._tool_group(layout, "Organizar PDF", [
+            ("Mesclar", "fa5s.object-group", self._open_merge_dialog),
+            ("Dividir", "fa5s.cut", self._open_split_dialog),
+            ("Proteger", "fa5s.lock", self._open_protect_dialog),
+            ("Assinar", "fa5s.signature", self._open_sign_dialog),
+        ])
+        layout.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setWidget(panel)
+
+        self.tools_dock = QDockWidget("Ferramentas de Edição", self)
+        self.tools_dock.setObjectName("toolsDock")
+        self.tools_dock.setWidget(scroll)
+        self.tools_dock.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetClosable)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.tools_dock)
+
     def _build_home_tab(self):
         self.home_widget = HomeWidget()
         self.home_widget.openRequested.connect(self.open_document_dialog)
@@ -438,6 +620,8 @@ class PapyraMainWindow(QMainWindow):
         self.home_widget.recentFileRequested.connect(self.open_document)
         self.home_widget.recentFileRemoveRequested.connect(self._remove_recent)
         self.home_widget.recentFilesCleared.connect(self._clear_recent)
+        self.home_widget.favoriteToggleRequested.connect(self._toggle_favorite)
+        self.home_widget.set_favorite_paths(set(self._favorite_files()))
         index = self.tabs.addTab(self.home_widget, "Início")
         self.tabs.tabBar().setTabButton(index, QTabBar.RightSide, None)
         self.tabs.tabBar().setTabButton(index, QTabBar.LeftSide, None)
@@ -477,6 +661,10 @@ class PapyraMainWindow(QMainWindow):
         color = icon_color(self._dark_theme)
         for action, name in self._icon_actions:
             action.setIcon(ficon(name, color))
+        for btn, name in getattr(self, "_nav_icon_buttons", []):
+            btn.setIcon(ficon(name, color))
+        for btn, name in getattr(self, "_tools_panel_icon_buttons", []):
+            btn.setIcon(ficon(name, color))
         if hasattr(self, "home_widget"):
             self.home_widget.refresh_theme(color)
             self.tabs.setTabIcon(self.tabs.indexOf(self.home_widget), ficon("fa5s.home", color))
@@ -846,6 +1034,82 @@ class PapyraMainWindow(QMainWindow):
             if path:
                 doc.extract_pages(indices, path)
 
+    def _insert_blank_page_after_current(self):
+        view = self._current_view()
+        if view is None:
+            return
+        self._with_doc(lambda d: d.insert_blank_page(view.current_page + 1))
+
+    def _rotate_current_page(self):
+        view = self._current_view()
+        if view is None:
+            return
+        self._with_doc(lambda d: d.rotate_page(view.current_page, 90))
+
+    # ------------------------------------------------------------------
+    # Ferramentas: converter, mesclar, dividir, proteger, assinar
+    # ------------------------------------------------------------------
+
+    def _require_doc(self) -> Optional[PdfDocument]:
+        doc = self._current_doc()
+        if doc is None:
+            QMessageBox.information(self, "Nenhum documento aberto", "Abra ou crie um PDF primeiro.")
+        return doc
+
+    def _activate_edit_and_tool(self, tool: Tool):
+        if self._current_doc() is None:
+            QMessageBox.information(self, "Nenhum documento aberto", "Abra ou crie um PDF primeiro.")
+            return
+        if not self._edit_mode:
+            self.act_edit_mode.setChecked(True)
+            self._toggle_edit_mode(True)
+        action = self.tool_actions.get(tool)
+        if action is not None:
+            action.setChecked(True)
+        self._set_tool(tool)
+
+    def _open_convert_dialog(self):
+        doc = self._require_doc()
+        if doc is None:
+            return
+        ConvertDialog(doc, self, icon_color=icon_color(self._dark_theme)).exec()
+
+    def _open_merge_dialog(self):
+        MergeFilesDialog(self, icon_color=icon_color(self._dark_theme)).exec()
+
+    def _open_split_dialog(self):
+        doc = self._require_doc()
+        if doc is None:
+            return
+        SplitDialog(doc, self).exec()
+
+    def _open_protect_dialog(self):
+        doc = self._require_doc()
+        if doc is None:
+            return
+        ProtectDialog(doc, self).exec()
+
+    def _open_sign_dialog(self):
+        doc = self._require_doc()
+        if doc is None:
+            return
+        dlg = SignatureDialog(self)
+        dlg.exec()
+        if dlg.signature_bytes:
+            self._activate_edit_and_tool(Tool.SIGNATURE)
+            self._with_view(lambda v: v.set_pending_signature(dlg.signature_bytes))
+            self.statusBar().showMessage(
+                "Agora clique e arraste sobre o documento para posicionar sua assinatura.", 6000,
+            )
+
+    def _show_cloud_info(self):
+        QMessageBox.information(
+            self, "Nuvem",
+            f"{__app_name__} funciona 100% localmente no seu computador, sem precisar de "
+            "conta, internet ou chave de API. Por isso não há sincronização com serviços "
+            "de nuvem — todos os seus arquivos ficam só com você, no seu dispositivo.",
+        )
+
     # ------------------------------------------------------------------
     # Arquivos recentes
     # ------------------------------------------------------------------
@@ -888,6 +1152,38 @@ class PapyraMainWindow(QMainWindow):
     def _clear_recent(self):
         self.settings.setValue("recent/files", [])
         self._update_recent_menu()
+
+    # ------------------------------------------------------------------
+    # Favoritos
+    # ------------------------------------------------------------------
+
+    def _favorite_files(self) -> list:
+        value = self.settings.value("favorites/files", [])
+        if isinstance(value, str):
+            value = [value]
+        return [f for f in (value or []) if os.path.exists(f)]
+
+    def _toggle_favorite(self, path: str):
+        raw = self.settings.value("favorites/files", [])
+        if isinstance(raw, str):
+            raw = [raw]
+        files = list(raw or [])
+        if path in files:
+            files.remove(path)
+        else:
+            files.append(path)
+        self.settings.setValue("favorites/files", files)
+        self.home_widget.set_favorite_paths(set(files))
+
+    def _go_home_recent(self):
+        self.tabs.setCurrentIndex(self.tabs.indexOf(self.home_widget))
+        self.home_widget.set_section_title("Arquivos recentes")
+        self.home_widget.set_recent_files([f for f in self._recent_files() if os.path.exists(f)])
+
+    def _go_home_favorites(self):
+        self.tabs.setCurrentIndex(self.tabs.indexOf(self.home_widget))
+        self.home_widget.set_section_title("Favoritos")
+        self.home_widget.set_recent_files(self._favorite_files())
 
     # ------------------------------------------------------------------
     # Diversos

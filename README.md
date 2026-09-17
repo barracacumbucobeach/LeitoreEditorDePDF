@@ -10,13 +10,25 @@ PDF (*Portable Document Format*) como o "papiro digital" de hoje.
 
 ## Principais recursos
 
+**Navegação e ferramentas sempre à mão**
+
+A janela principal tem uma coluna de navegação fixa à esquerda (**Início**,
+**Abrir**, **Recentes**, **Favoritos**, **Nuvem** e a lista de
+**Ferramentas**: Editar PDF, Converter, Mesclar, Dividir, Proteger,
+Assinar) e um painel **"Ferramentas de Edição"** à direita, com atalhos
+visuais em cartões para as mesmas ações, agrupados por categoria. "Nuvem"
+é apenas informativo: o Papyra funciona 100% localmente, sem conta, sem
+internet e sem chave de API — por isso não há sincronização remota.
+
 **Página inicial (dashboard)**
 
 Ao abrir o programa, uma página inicial recebe o usuário com as opções
 principais em destaque: **Abrir PDF...**, **Novo documento** e a lista de
-**arquivos recentes** (clicáveis, com opção de remover individualmente ou
-limpar tudo). A qualquer momento é possível voltar a ela pelo botão de casa
-na barra de ferramentas, pelo menu Arquivo, ou com `Ctrl+Home`.
+**arquivos recentes** (clicáveis, com opção de favoritar ⭐, remover
+individualmente ou limpar tudo). Os favoritos ficam disponíveis também pela
+navegação lateral, em sua própria lista. A qualquer momento é possível
+voltar à página inicial pelo botão de casa na barra de ferramentas, pelo
+menu Arquivo, ou com `Ctrl+Home`.
 
 **Modo Visualizar / Editar**
 
@@ -54,16 +66,35 @@ cada ícone) e a barra de estilo. Voltar ao modo leitura oculta tudo de novo.
   Página → "Reconhecer texto (OCR)..."
 - **Imagens**: inserir, substituir, mover, redimensionar e excluir imagens do
   documento
+- **Link**: desenhe uma área e associe um endereço web ou uma página do
+  próprio documento
+- **Assinatura visual**: crie uma assinatura desenhando com o mouse,
+  digitando seu nome (com estilo cursivo) ou enviando uma imagem, e carimbe-a
+  em qualquer ponto do documento. É uma assinatura visual/de conveniência —
+  não uma assinatura digital criptográfica com certificado (PKI)
 - **Anotações e formas**: realce de texto, retângulo, elipse, linha, seta,
   caneta (desenho livre), caixa de texto, nota adesiva
 - **Borracha**: apaga permanentemente qualquer conteúdo de uma área
   (baseada em redação/*redaction* real do PDF, não apenas uma cobertura visual)
 - **Gerenciador de páginas**: adicionar, excluir, girar, duplicar, reordenar
   (arrastar e soltar), extrair páginas para um novo arquivo e inserir páginas
-  de outro PDF (mesclar)
+  de outro PDF
 - **Propriedades do documento**: título, autor, assunto, palavras-chave
 - **Desfazer/Refazer** completo para qualquer operação de edição
 - Temas claro e escuro
+
+**Converter, organizar e proteger**
+
+- **Converter PDF**: para Word (`.docx`, preservando o layout), Excel
+  (`.xlsx`, com detecção automática de tabelas), PowerPoint (`.pptx`, uma
+  página por slide), página web (`.html`) ou imagens (`.png`/`.jpg`, uma por
+  página) — tudo processado localmente, sem enviar o arquivo a lugar nenhum
+- **Mesclar PDF**: combine vários arquivos PDF, na ordem que você escolher,
+  em um único documento
+- **Dividir PDF**: separe o documento em um arquivo por página, ou em
+  intervalos personalizados (ex.: `1-3, 4-6`)
+- **Proteger PDF**: adicione uma senha (criptografia AES-256, com controle
+  de permissão de impressão/cópia) ou remova a proteção de um PDF já aberto
 
 ### OCR — instalando o Tesseract (opcional)
 
@@ -84,9 +115,13 @@ como instalar).
 
 - **Python 3.11+**
 - **PySide6** (Qt 6) para a interface
-- **PyMuPDF** (`pymupdf`/`fitz`) para leitura e edição de baixo nível do PDF
+- **PyMuPDF** (`pymupdf`/`fitz`) para leitura e edição de baixo nível do PDF,
+  incluindo criptografia, links e detecção de tabelas
 - **qtawesome** para os ícones vetoriais
 - **Pillow** como apoio para manipulação de imagens
+- **pdf2docx** para a conversão para Word preservando layout
+- **python-pptx** para a conversão para PowerPoint
+- **openpyxl** para a conversão para Excel
 
 ## Como executar
 
@@ -150,11 +185,13 @@ papyra/
                               rolagem contínua, ferramentas de edição,
                               impressão
   tools.py                   Definição das ferramentas de edição
-  home.py                    Página inicial (dashboard)
+  home.py                    Página inicial (dashboard) e favoritos
   sidebar.py                 Painéis de miniaturas e sumário
-  dialogs.py                 Diálogos: Sobre, Propriedades, Gerenciar páginas
-  main_window.py             Janela principal: menus, barras de ferramentas,
-                              abas, atalhos, arquivos recentes
+  dialogs.py                 Diálogos: Sobre, Propriedades, Gerenciar páginas,
+                              Converter, Mesclar, Dividir, Proteger, Assinar
+  main_window.py             Janela principal: navegação lateral, painel de
+                              ferramentas, menus, barras de ferramentas,
+                              abas, atalhos, arquivos recentes e favoritos
   theme.py                   Paleta de cores e folha de estilos (QSS)
   icons.py                   Ícones vetoriais
 assets/icon.svg               Ícone da aplicação

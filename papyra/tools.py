@@ -19,9 +19,11 @@ class Tool(Enum):
     IMAGE = auto()        # inserir imagem
     NOTE = auto()         # nota adesiva
     ERASER = auto()       # apagar (borracha / branqueamento)
+    LINK = auto()          # link (URL ou ir para página)
+    SIGNATURE = auto()     # carimbar assinatura visual capturada
 
 
-DRAG_RECT_TOOLS = {Tool.HIGHLIGHT, Tool.RECT, Tool.ELLIPSE, Tool.ERASER, Tool.ADD_TEXT, Tool.IMAGE}
+DRAG_RECT_TOOLS = {Tool.HIGHLIGHT, Tool.RECT, Tool.ELLIPSE, Tool.ERASER, Tool.ADD_TEXT, Tool.IMAGE, Tool.LINK, Tool.SIGNATURE}
 DRAG_LINE_TOOLS = {Tool.LINE, Tool.ARROW}
 
 TOOL_LABELS = {
@@ -37,6 +39,8 @@ TOOL_LABELS = {
     Tool.IMAGE: "Imagem",
     Tool.NOTE: "Nota",
     Tool.ERASER: "Borracha",
+    Tool.LINK: "Link",
+    Tool.SIGNATURE: "Assinatura",
 }
 
 TOOL_TOOLTIPS = {
@@ -52,6 +56,8 @@ TOOL_TOOLTIPS = {
     Tool.IMAGE: "Imagem — insira uma foto ou figura a partir de um arquivo",
     Tool.NOTE: "Nota adesiva — adicione um comentário em forma de nota",
     Tool.ERASER: "Borracha — apaga permanentemente o conteúdo de uma área",
+    Tool.LINK: "Link — desenhe uma área e associe um endereço web ou uma página do documento",
+    Tool.SIGNATURE: "Assinatura — crie e carimbe sua assinatura em uma área do documento",
 }
 
 

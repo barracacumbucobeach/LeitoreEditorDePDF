@@ -15,6 +15,9 @@ sempre buscamos `self._doc[index]` (e o annot pelo `xref`) no momento do uso.
 from __future__ import annotations
 
 import io
+import os
+import tempfile
+from pathlib import Path
 from dataclasses import dataclass
 from typing import Iterable, Optional, Sequence, Union
 
@@ -781,3 +784,194 @@ class PdfDocument(QObject):
 
     def needs_password(self) -> bool:
         return self.is_encrypted
+
+    # -- proteção (criptografia) -------------------------------------------
+
+    def save_protected(
+        self,
+        path: str,
+        user_password: str,
+        owner_password: Optional[str] = None,
+        allow_print: bool = True,
+        allow_copy: bool = True,
+    ) -> bool:
+        """Salva uma cópia do documento protegida por senha (AES-256)."""
+        perm = fitz.PDF_PERM_ANNOTATE | fitz.PDF_PERM_ASSEMBLE
+        if allow_print:
+            perm |= fitz.PDF_PERM_PRINT
+        if allow_copy:
+            perm |= fitz.PDF_PERM_COPY
+        self._doc.save(
+            path,
+            encryption=fitz.PDF_ENCRYPT_AES_256,
+            user_pw=user_password,
+            owner_pw=owner_password or user_password,
+            permissions=perm,
+            garbage=4,
+            deflate=True,
+        )
+        return True
+
+    def save_unprotected(self, path: str) -> bool:
+        """Salva uma cópia sem senha (o documento em memória já precisa ter
+        sido autenticado, se estava protegido)."""
+        self._doc.save(path, encryption=fitz.PDF_ENCRYPT_NONE, garbage=4, deflate=True)
+        return True
+
+    # -- links ------------------------------------------------------------
+
+    def add_link(self, index: int, rect: tuple, url: Optional[str] = None, target_page: Optional[int] = None) -> None:
+        self._push_undo()
+        page = self._doc[index]
+        if url:
+            link = {"kind": fitz.LINK_URI, "from": fitz.Rect(rect), "uri": url}
+        else:
+            link = {"kind": fitz.LINK_GOTO, "from": fitz.Rect(rect), "page": max(0, target_page or 0)}
+        page.insert_link(link)
+        self._mark_modified()
+
+    # -- assinatura (carimbo visual) ---------------------------------------
+
+    def stamp_signature(self, index: int, rect: tuple, image_bytes: bytes) -> None:
+        """Carimba uma imagem de assinatura (traçada ou digitada) na página.
+
+        Trata-se de uma assinatura visual/de conveniência — não é uma
+        assinatura digital criptográfica com certificado (PKI)."""
+        self._push_undo()
+        page = self._doc[index]
+        page.insert_image(fitz.Rect(rect), stream=image_bytes, keep_proportion=True, overlay=True)
+        self._mark_modified()
+
+    # -- conversão para outros formatos --------------------------------------
+
+    def convert_to_docx(self, path: str) -> None:
+        """Converte para Word (.docx), preservando layout via pdf2docx."""
+        try:
+            from pdf2docx import Converter
+        except ImportError as exc:
+            raise RuntimeError("O módulo 'pdf2docx' não está instalado.") from exc
+
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                tmp_path = tmp.name
+            self.export_copy(tmp_path)
+            converter = Converter(tmp_path)
+            try:
+                converter.convert(path)
+            finally:
+                converter.close()
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+
+    def convert_to_html(self, path: str) -> None:
+        """Converte para uma única página HTML, uma seção por página do PDF."""
+        title = Path(self.path).stem if self.path else (self.custom_title or "Documento")
+        parts = [
+            "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+            f"<title>{title}</title></head><body>"
+        ]
+        for i in range(self.page_count):
+            page = self._doc[i]
+            parts.append(f'<div style="position:relative;margin-bottom:24px;">{page.get_text("html")}</div>')
+        parts.append("</body></html>")
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("".join(parts))
+
+    def convert_to_pptx(self, path: str, dpi: int = 150) -> None:
+        """Converte cada página em um slide (imagem em tela cheia)."""
+        try:
+            from pptx import Presentation
+            from pptx.util import Emu
+        except ImportError as exc:
+            raise RuntimeError("O módulo 'python-pptx' não está instalado.") from exc
+
+        prs = Presentation()
+        blank_layout = prs.slide_layouts[6]
+        first_w_pt, first_h_pt = self.page_size(0) if self.page_count else (595.0, 842.0)
+        prs.slide_width = Emu(int(first_w_pt * 12700))
+        prs.slide_height = Emu(int(first_h_pt * 12700))
+        zoom = dpi / 72.0
+
+        for i in range(self.page_count):
+            page = self._doc[i]
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+            png_bytes = pix.tobytes("png")
+            slide = prs.slides.add_slide(blank_layout)
+            w_pt, h_pt = self.page_size(i)
+            scale = min(prs.slide_width / (w_pt * 12700), prs.slide_height / (h_pt * 12700))
+            pic_w = Emu(int(w_pt * 12700 * scale))
+            pic_h = Emu(int(h_pt * 12700 * scale))
+            left = Emu(int((prs.slide_width - pic_w) / 2))
+            top = Emu(int((prs.slide_height - pic_h) / 2))
+            slide.shapes.add_picture(io.BytesIO(png_bytes), left, top, width=pic_w, height=pic_h)
+        prs.save(path)
+
+    def convert_to_xlsx(self, path: str) -> None:
+        """Converte tabelas detectadas (ou, na ausência delas, o texto puro)
+        de cada página em uma planilha do Excel."""
+        try:
+            from openpyxl import Workbook
+        except ImportError as exc:
+            raise RuntimeError("O módulo 'openpyxl' não está instalado.") from exc
+
+        wb = Workbook()
+        wb.remove(wb.active)
+        for i in range(self.page_count):
+            page = self._doc[i]
+            ws = wb.create_sheet(title=f"Página {i + 1}"[:31])
+            row_cursor = 1
+            try:
+                found = page.find_tables()
+                tables = list(found.tables)
+            except Exception:
+                tables = []
+            if tables:
+                for table in tables:
+                    for r, row in enumerate(table.extract()):
+                        for c, value in enumerate(row):
+                            ws.cell(row=row_cursor + r, column=c + 1, value=value)
+                    row_cursor += len(table.extract()) + 2
+            else:
+                for line in page.get_text("text").splitlines():
+                    ws.cell(row=row_cursor, column=1, value=line)
+                    row_cursor += 1
+        if not wb.sheetnames:
+            wb.create_sheet("Página 1")
+        wb.save(path)
+
+    def convert_to_images(self, dir_path: str, fmt: str = "png", dpi: int = 200) -> list[str]:
+        """Exporta cada página como um arquivo de imagem (PNG ou JPEG)."""
+        from PIL import Image
+
+        os.makedirs(dir_path, exist_ok=True)
+        zoom = dpi / 72.0
+        out_paths = []
+        for i in range(self.page_count):
+            page = self._doc[i]
+            pix = page.get_pixmap(matrix=fitz.Matrix(zoom, zoom), alpha=False)
+            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+            out_path = os.path.join(dir_path, f"pagina-{i + 1:03d}.{fmt.lower()}")
+            if fmt.lower() in ("jpg", "jpeg"):
+                img.save(out_path, quality=92)
+            else:
+                img.save(out_path)
+            out_paths.append(out_path)
+        return out_paths
+
+
+# --------------------------------------------------------------------------
+# Utilitários independentes (não precisam de um PdfDocument já aberto)
+# --------------------------------------------------------------------------
+
+def merge_pdfs(paths: Sequence[str], output_path: str) -> None:
+    """Mescla vários arquivos PDF (nesta ordem) em um novo arquivo único."""
+    result = fitz.open()
+    try:
+        for path in paths:
+            with fitz.open(path) as src:
+                result.insert_pdf(src)
+        result.save(output_path, garbage=4, deflate=True)
+    finally:
+        result.close()

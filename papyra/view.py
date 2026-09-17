@@ -108,6 +108,7 @@ class PdfView(QGraphicsView):
         self.edit_mode = False
         self._ocr_blocks: dict[int, list] = {}
         self._edit_hint_items: list = []
+        self._pending_signature: Optional[bytes] = None
 
         self._page_items: list[PageItem] = []
         self._page_positions: list[float] = []
@@ -378,6 +379,8 @@ class PdfView(QGraphicsView):
         Tool.IMAGE: Qt.CrossCursor,
         Tool.NOTE: Qt.PointingHandCursor,
         Tool.ERASER: Qt.CrossCursor,
+        Tool.LINK: Qt.CrossCursor,
+        Tool.SIGNATURE: Qt.CrossCursor,
     }
 
     def set_tool(self, tool: Tool):
@@ -633,6 +636,10 @@ class PdfView(QGraphicsView):
             self._start_add_text(page_idx, pdf_rect)
         elif self.tool == Tool.IMAGE:
             self._pick_and_insert_image(page_idx, pdf_rect)
+        elif self.tool == Tool.LINK:
+            self._start_add_link(page_idx, pdf_rect)
+        elif self.tool == Tool.SIGNATURE:
+            self._place_pending_signature(page_idx, pdf_rect)
 
     def _commit_line(self, page_idx: int, start_scene: QPointF, end_scene: QPointF):
         item = self._page_items[page_idx]
@@ -831,6 +838,40 @@ class PdfView(QGraphicsView):
         if not path:
             return
         self.document.insert_image(page_idx, pdf_rect, path)
+
+    # ------------------------------------------------------------------
+    # Link
+    # ------------------------------------------------------------------
+
+    def _start_add_link(self, page_idx: int, pdf_rect: tuple):
+        from PySide6.QtWidgets import QInputDialog
+
+        text, ok = QInputDialog.getText(
+            self, "Adicionar link",
+            "Endereço web (https://...) ou número de página para ir (ex.: 3):",
+        )
+        if not ok or not text.strip():
+            return
+        text = text.strip()
+        if text.isdigit():
+            self.document.add_link(page_idx, pdf_rect, target_page=int(text) - 1)
+        else:
+            url = text if "://" in text else f"https://{text}"
+            self.document.add_link(page_idx, pdf_rect, url=url)
+        self.statusMessage.emit("Link adicionado.")
+
+    # ------------------------------------------------------------------
+    # Assinatura
+    # ------------------------------------------------------------------
+
+    def set_pending_signature(self, image_bytes: bytes):
+        self._pending_signature = image_bytes
+
+    def _place_pending_signature(self, page_idx: int, pdf_rect: tuple):
+        if not self._pending_signature:
+            self.statusMessage.emit("Crie uma assinatura primeiro em “Assinar PDF”.")
+            return
+        self.document.stamp_signature(page_idx, pdf_rect, self._pending_signature)
 
     def replace_selected_image(self):
         if not self._selection or self._selection["kind"] != "image":

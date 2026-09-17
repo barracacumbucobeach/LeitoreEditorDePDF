@@ -11,45 +11,45 @@ from __future__ import annotations
 from PySide6.QtGui import QColor
 
 DARK = {
-    "bg": "#191c22",
-    "bg_alt": "#14161b",
-    "surface": "#20242c",
-    "surface_alt": "#262b35",
-    "surface_hover": "#2c313d",
-    "border": "#333a47",
-    "border_soft": "#2a2f3a",
-    "text": "#e9ebf1",
-    "text_dim": "#9aa3b5",
-    "text_faint": "#6b7385",
-    "accent": "#d3a44c",
-    "accent_hover": "#e6b862",
-    "accent_text": "#1a1d24",
-    "danger": "#e5636b",
-    "success": "#4bd0a0",
-    "info": "#6ea8fe",
-    "canvas": "#0e0f13",
-    "selection": "#3a5a8c",
+    "bg": "#12151c",
+    "bg_alt": "#0c0e13",
+    "surface": "#191d27",
+    "surface_alt": "#20242f",
+    "surface_hover": "#262b38",
+    "border": "#2b3140",
+    "border_soft": "#232836",
+    "text": "#eef1f7",
+    "text_dim": "#9aa3b8",
+    "text_faint": "#68708a",
+    "accent": "#3e7bfa",
+    "accent_hover": "#5c90fb",
+    "accent_text": "#ffffff",
+    "danger": "#f0555f",
+    "success": "#3ecf8e",
+    "info": "#60a5fa",
+    "canvas": "#090b10",
+    "selection": "#2c4a7c",
 }
 
 LIGHT = {
-    "bg": "#f2f1ec",
-    "bg_alt": "#e9e7df",
+    "bg": "#f3f5fa",
+    "bg_alt": "#eaeef7",
     "surface": "#ffffff",
-    "surface_alt": "#f6f5f1",
-    "surface_hover": "#eee9db",
-    "border": "#dcd6c4",
-    "border_soft": "#e6e1d2",
-    "text": "#232420",
-    "text_dim": "#5c5d52",
-    "text_faint": "#8b8c7f",
-    "accent": "#9c6f13",
-    "accent_hover": "#b3811a",
+    "surface_alt": "#f6f8fc",
+    "surface_hover": "#eaf0fd",
+    "border": "#dbe2f0",
+    "border_soft": "#e6ebf5",
+    "text": "#1b2233",
+    "text_dim": "#5b6478",
+    "text_faint": "#8b93a7",
+    "accent": "#2563eb",
+    "accent_hover": "#3b76f0",
     "accent_text": "#ffffff",
-    "danger": "#c23b41",
-    "success": "#1f8f66",
+    "danger": "#dc4655",
+    "success": "#12946a",
     "info": "#2f66c9",
-    "canvas": "#d9d6cb",
-    "selection": "#bcd2f3",
+    "canvas": "#dfe4ee",
+    "selection": "#c7d9fb",
 }
 
 
@@ -463,5 +463,80 @@ def stylesheet(dark: bool) -> str:
     QLabel#recentRowPath {{
         font-size: 11px;
         color: {p['text_faint']};
+    }}
+
+    /* ---------- Barra de navegação (coluna esquerda) ---------- */
+    QWidget#navRail {{
+        background: {p['bg_alt']};
+        border-right: 1px solid {p['border']};
+    }}
+    QLabel#navBrand {{
+        font-size: 16px;
+        font-weight: 700;
+        color: {p['text']};
+        padding: 4px 2px;
+    }}
+    QLabel#navSectionLabel {{
+        color: {p['text_faint']};
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        padding: 10px 10px 2px 10px;
+    }}
+    QToolButton#navItem {{
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        padding: 9px 10px;
+        text-align: left;
+        color: {p['text_dim']};
+        font-weight: 500;
+    }}
+    QToolButton#navItem:hover {{
+        background: {p['surface_hover']};
+        color: {p['text']};
+    }}
+    QToolButton#navItem:checked {{
+        background: {p['accent']};
+        color: {p['accent_text']};
+        font-weight: 600;
+    }}
+
+    /* ---------- Painel direito "Ferramentas de Edição" ---------- */
+    QWidget#toolsPanelRoot {{
+        background: {p['bg_alt']};
+    }}
+    QLabel#toolsPanelTitle {{
+        font-size: 15px;
+        font-weight: 700;
+        color: {p['text']};
+        padding: 2px 2px 0 2px;
+    }}
+    QLabel#toolsPanelSubtitle {{
+        color: {p['text_dim']};
+        font-size: 12px;
+        padding: 0 2px 4px 2px;
+    }}
+    QLabel#toolsGroupTitle {{
+        color: {p['text_dim']};
+        font-size: 12px;
+        font-weight: 700;
+        padding: 12px 2px 2px 2px;
+    }}
+    QToolButton#toolCard {{
+        background: {p['surface']};
+        border: 1px solid {p['border']};
+        border-radius: 10px;
+        padding: 10px 8px;
+        color: {p['text']};
+        font-size: 11px;
+        font-weight: 600;
+    }}
+    QToolButton#toolCard:hover {{
+        background: {p['surface_hover']};
+        border: 1px solid {p['accent']};
+    }}
+    QToolButton#toolCard:pressed {{
+        background: {p['surface_alt']};
     }}
     """

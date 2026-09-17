@@ -66,10 +66,12 @@ class RecentFileRow(QFrame):
 
     clicked = Signal(str)
     removeRequested = Signal(str)
+    favoriteToggleRequested = Signal(str)
 
-    def __init__(self, path: str, parent: Optional[QWidget] = None):
+    def __init__(self, path: str, is_favorite: bool = False, parent: Optional[QWidget] = None):
         super().__init__(parent)
         self.path = path
+        self.is_favorite = is_favorite
         self.setObjectName("recentRow")
         self.setCursor(Qt.PointingHandCursor)
         self.setFrameShape(QFrame.NoFrame)
@@ -93,6 +95,11 @@ class RecentFileRow(QFrame):
         text_col.addWidget(path_label)
         layout.addLayout(text_col, 1)
 
+        self.fav_btn = QToolButton()
+        self.fav_btn.setAutoRaise(True)
+        self.fav_btn.clicked.connect(lambda: self.favoriteToggleRequested.emit(self.path))
+        layout.addWidget(self.fav_btn)
+
         self.remove_btn = QToolButton()
         self.remove_btn.setToolTip("Remover da lista de recentes")
         self.remove_btn.setAutoRaise(True)
@@ -101,6 +108,9 @@ class RecentFileRow(QFrame):
 
     def set_icon_color(self, color: str):
         self.icon_label.setPixmap(ficon("fa5s.file-pdf", color).pixmap(20, 20))
+        self.fav_btn.setToolTip("Remover dos favoritos" if self.is_favorite else "Adicionar aos favoritos")
+        star_color = "#e8b93a" if self.is_favorite else color
+        self.fav_btn.setIcon(ficon("fa5s.star", star_color))
         self.remove_btn.setIcon(ficon("fa5s.times", color))
 
     def mousePressEvent(self, event):
@@ -118,6 +128,7 @@ class HomeWidget(QWidget):
     recentFileRequested = Signal(str)
     recentFileRemoveRequested = Signal(str)
     recentFilesCleared = Signal()
+    favoriteToggleRequested = Signal(str)
 
     _icon_color = "#e9ebf1"
 
@@ -125,6 +136,7 @@ class HomeWidget(QWidget):
         super().__init__(parent)
         self.setObjectName("homeRoot")
         self._recent_paths: list[str] = []
+        self._favorite_paths: set = set()
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -201,9 +213,9 @@ class HomeWidget(QWidget):
         inner.addSpacing(34)
 
         recent_header = QHBoxLayout()
-        recent_title = QLabel("Arquivos recentes")
-        recent_title.setObjectName("homeSectionTitle")
-        recent_header.addWidget(recent_title)
+        self.recent_title = QLabel("Arquivos recentes")
+        self.recent_title.setObjectName("homeSectionTitle")
+        recent_header.addWidget(self.recent_title)
         recent_header.addStretch(1)
         self.clear_recent_btn = QPushButton("Limpar lista")
         self.clear_recent_btn.setFlat(True)
@@ -237,13 +249,24 @@ class HomeWidget(QWidget):
                 widget.setParent(None)
                 widget.deleteLater()
         for path in paths:
-            row = RecentFileRow(path)
+            row = RecentFileRow(path, is_favorite=path in self._favorite_paths)
             row.set_icon_color(self._icon_color)
             row.clicked.connect(self.recentFileRequested)
             row.removeRequested.connect(self.recentFileRemoveRequested)
+            row.favoriteToggleRequested.connect(self.favoriteToggleRequested)
             self.recent_list_layout.addWidget(row)
+        empty_text = "Nenhum arquivo aqui ainda." if paths or self._favorite_paths else "Nenhum arquivo recente ainda. Abra um PDF para começar."
+        self.empty_label.setText(empty_text)
         self.empty_label.setVisible(not paths)
         self.clear_recent_btn.setVisible(bool(paths))
+
+    def set_section_title(self, text: str):
+        self.recent_title.setText(text)
+        self.clear_recent_btn.setVisible(text == "Arquivos recentes" and bool(self._recent_paths))
+
+    def set_favorite_paths(self, paths):
+        self._favorite_paths = set(paths)
+        self.set_recent_files(self._recent_paths)
 
     def refresh_theme(self, icon_color: str):
         self._icon_color = icon_color
